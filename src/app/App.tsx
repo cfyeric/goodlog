@@ -22,7 +22,7 @@ export function App() {
   return (
     <main className="app">
       <h1>好記</h1>
-      <p className="muted">React 版建置中。{store?.mode === "demo" ? "目前是範例資料（本機開發），變更不會保存。" : null}</p>
+      <p className="muted">React 版建置中。{store?.mode === "demo" ? "目前顯示的是範例資料，不是你的帳本，變更也不會保存。" : null}</p>
       {error ? <p className="err">{error}</p> : null}
       {!stats ? (
         <p>正在讀取帳本…</p>

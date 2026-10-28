@@ -5,3 +5,4 @@ dist/
 # 真實帳本資料只放本機，絕不提交
 fixtures/private/
 *.tsbuildinfo
+dist-artifact/

@@ -72,6 +72,10 @@ fixtures/     比對用資料；fixtures/private/ 是真實帳本，已在 .giti
 2. 到 claude.ai 跟 Claude 說「從 GitHub 更新」，由那邊 pull、build、測試後發佈到原本的網址。
 3. 新版還沒完成前，claude.ai 上繼續用 `legacy/` 的舊版。新版要先發佈到另一個測試網址，使用者在手機試用沒問題才換。
 
+- 測試網址：https://claude.ai/artifact/5ZSvAJCpfiehvWoWQq13mu（「好記 測試版」，目前沒有宣告資料庫權限，只會顯示範例資料）。
+- 發佈用的檔案：`npm run build:artifact` → `dist-artifact/index.html`（JS、CSS 內嵌成單一檔案，去掉 claude.ai 會自動加上的外層標籤）。
+- 注意：claude.ai 每個網頁有自己的資料庫。測試網址就算開了資料庫權限，也是另一個空的帳本，看不到正式帳本的資料。
+
 `vite.config.ts` 的 `base: "./"` 是為了讓打包後用相對路徑引用檔案，不要改。
 
 ## 改寫進度
