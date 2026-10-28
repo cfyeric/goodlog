@@ -14,7 +14,7 @@ import { findAlias } from "./alias";
 /** 先用 UTF-8 解碼，亂碼太多再改用 Big5（台灣銀行常見） */
 export function decodeText(buf: ArrayBuffer | Uint8Array): string {
   let t = new TextDecoder("utf-8").decode(buf);
-  if ((t.match(/�/g) || []).length > 2) {
+  if ((t.match(/\uFFFD/g) || []).length > 2) {
     try {
       t = new TextDecoder("big5").decode(buf);
     } catch {
