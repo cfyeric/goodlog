@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useState, type ReactNode } from
 import { ymd } from "../core/dates";
 
 export type View = "home" | "acc" | "proj" | "report" | "settings" | "cats" | "subcats";
-export type ReportTab = "overview" | "cat" | "acc" | "proj";
+export type ReportTab = "overview" | "cat" | "rank" | "acc" | "proj";
 
 export interface Nav {
   view: View;
@@ -17,13 +17,17 @@ export interface Nav {
   accSet: string | null;
   projSel: string | null;
   projSet: string | null;
-  rMode: "month" | "year" | "custom" | "all" | string;
+  rMode: "week" | "month" | "year";
   rAnchor: string;
   rTab: ReportTab;
   rType: "expense" | "income";
   rDrill: string | null;
   rSub: string | null;
   rKey: string | null;
+  /** 明細金額由小到大排序 */
+  rAsc: boolean;
+  /** 排行顯示全部（預設只顯示前 50 筆） */
+  rRankAll: boolean;
   /** 使用者關掉的繳費提醒內容 */
   remDismiss: string | null;
   /** 正在確認刪除的項目（第二次按才真的刪） */
@@ -50,6 +54,8 @@ export const initialNav: Nav = {
   rDrill: null,
   rSub: null,
   rKey: null,
+  rAsc: false,
+  rRankAll: false,
   remDismiss: null,
   armed: null,
   catType: "expense",

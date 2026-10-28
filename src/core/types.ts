@@ -92,6 +92,8 @@ export interface Group {
   icon?: string;
   color?: string;
   hidden?: boolean;
+  /** 完整圖示庫的圖示形狀（內建圖示沒有的才存） */
+  iconNode?: unknown;
 }
 
 export interface Category {

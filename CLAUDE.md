@@ -33,12 +33,22 @@ src/core/     純邏輯，不碰畫面、不碰資料庫、沒有全域狀態。
   alias.ts        帳單說明 → 類別的商家對照
   statement.ts    信用卡帳單解析與比對
   defaults.ts     新帳本預設值、舊格式設定轉換
+  editor.ts       記帳畫面的邏輯：算式、數字鍵盤、草稿、儲存（含週期記錄的修改範圍）、刪除
+  report.ts       報表期間（週／月／年）
+  backup.ts       備份 JSON、還原、匯出 CSV
+  moze.ts         從 MOZE 的 CSV 匯入
 src/data/     資料存取
   store.ts        LedgerStore 介面（畫面只透過它讀寫）
   claudeStore.ts  claude.ai 雲端資料庫（window.claude.use("db")）
   demoStore.ts    本機範例資料
   merge.ts        多裝置同時寫入同一個月的合併邏輯
-src/app/      React 畫面（目前只有一個暫時的首頁）
+src/app/      React 畫面
+  state.tsx       帳本狀態與寫入（AppProvider）；nav.tsx 目前在哪一頁
+  shell/          頁首提醒、底部選單、提示訊息
+  pages/          首頁、帳戶、專案、報表、設定、類別管理
+  editor/         記帳畫面、日期、排程、加值對話框
+  import/         信用卡帳單比對、MOZE 匯入
+  legacy.css      直接沿用舊版的樣式（class 名稱跟舊版相同）
 legacy/       舊版完整原始碼，是所有行為的標準答案
 scripts/legacy-snapshot.mjs  用舊版算出結果，給新舊版比對測試用
 fixtures/     比對用資料；fixtures/private/ 是真實帳本，已在 .gitignore，絕對不要提交
@@ -82,7 +92,7 @@ fixtures/     比對用資料；fixtures/private/ 是真實帳本，已在 .giti
 
 第一階段（已完成）：專案架構、核心邏輯模組、資料層、新舊版比對測試。
 
-第二階段（畫面，一頁一頁做，每頁都要跟舊版對照）：
+第二階段（畫面，一頁一頁做，每頁都要跟舊版對照）：以下都已完成，並在手機寬度、淺色／深色下跟舊版截圖逐像素比對過。下一步是使用者在測試網址試用。
 
 1. 日曆首頁：月曆、本月收支、預算提醒卡片（左右滑動）、待入帳、當日記錄、頁首繳費提醒列
 2. 記帳畫面：支出／收入、數字鍵盤與算式、手續費與折扣、類別（主類別＋子類別、拖曳排序）、付款方式與卡片、專案、名稱與商家建議（兩邊連動）、日期時間、標籤、備註、排程（週期／分期／單次、立即／延後／提醒入帳）、編輯週期記錄的範圍（只改這筆／這筆和之後／全部）、刪除、確認入帳

@@ -8,6 +8,10 @@ import { Projects } from "./pages/Projects";
 import { EditorHost } from "./editor/EditorSheet";
 import { TopupHost } from "./editor/TopupDialog";
 import { ImportHost } from "./import/ImportSheet";
+import { MozeHost } from "./import/MozeSheet";
+import { Reports } from "./pages/Reports";
+import { Settings } from "./pages/Settings";
+import { Cats, Subcats } from "./pages/Cats";
 import { useOverlay } from "./editor/context";
 
 export function App() {
@@ -18,6 +22,7 @@ export function App() {
           <Main />
           <TabBar />
           <ImportHost />
+          <MozeHost />
           <EditorHost />
           <TopupHost />
           <Toast />
@@ -55,12 +60,18 @@ function Main() {
     case "proj":
       page = <Projects ledger={ledger} />;
       break;
-    default:
-      page = (
-        <div className="empty" style={{ marginTop: 16 }}>
-          <b>這一頁還在改寫中</b>React 版會一頁一頁完成。
-        </div>
-      );
+    case "report":
+      page = <Reports ledger={ledger} />;
+      break;
+    case "settings":
+      page = <Settings ledger={ledger} />;
+      break;
+    case "cats":
+      page = <Cats ledger={ledger} />;
+      break;
+    case "subcats":
+      page = <Subcats ledger={ledger} />;
+      break;
   }
   return (
     <div className="app">
