@@ -1,0 +1,3 @@
+/* 新版額外的樣式（舊版樣式在 legacy.css） */
+.app { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+body{margin:0}

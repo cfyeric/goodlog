@@ -105,3 +105,10 @@ export function svBalance(l: Ledger, c: Card, today: DateStr): number {
 export function svChildOf(s: Settings, c: Card): Card | null {
   return (s.cards || []).find((x) => x.svOf === c.id) || null;
 }
+
+/** 建立一筆加值記錄（算信用卡刷卡、不算支出） */
+export function makeTopup(o: { id?: string; cardId: string; amount: number; date: DateStr; note?: string }, newId: string): Tx {
+  const t: Tx = { id: o.id || "t" + newId, type: "topup", amount: +o.amount, date: o.date, pay: "card", cardId: o.cardId };
+  if (o.note) t.note = o.note;
+  return t;
+}
