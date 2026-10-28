@@ -3,8 +3,12 @@ import { NavProvider, useNav } from "./nav";
 import { OverlayProvider } from "./editor/context";
 import { Banner, RemindBar, TabBar, Toast, useDisarmOnClick, useFollowToday } from "./shell/Shell";
 import { Home } from "./pages/Home";
+import { Accounts } from "./pages/Accounts";
+import { Projects } from "./pages/Projects";
 import { EditorHost } from "./editor/EditorSheet";
 import { TopupHost } from "./editor/TopupDialog";
+import { ImportHost } from "./import/ImportSheet";
+import { useOverlay } from "./editor/context";
 
 export function App() {
   return (
@@ -13,6 +17,7 @@ export function App() {
         <OverlayProvider>
           <Main />
           <TabBar />
+          <ImportHost />
           <EditorHost />
           <TopupHost />
           <Toast />
@@ -25,6 +30,7 @@ export function App() {
 function Main() {
   const { ledger } = useApp();
   const { nav } = useNav();
+  const { setImportOpen } = useOverlay();
   useFollowToday();
   useDisarmOnClick();
   if (!ledger)
@@ -42,6 +48,12 @@ function Main() {
   switch (nav.view) {
     case "home":
       page = <Home ledger={ledger} />;
+      break;
+    case "acc":
+      page = <Accounts ledger={ledger} onImport={() => setImportOpen(true)} />;
+      break;
+    case "proj":
+      page = <Projects ledger={ledger} />;
       break;
     default:
       page = (

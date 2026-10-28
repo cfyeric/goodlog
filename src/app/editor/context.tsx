@@ -28,6 +28,12 @@ interface OverlayCtx {
   closeEditor: () => void;
   topup: TopupRequest | null;
   openTopup: (r: TopupRequest | null) => void;
+  /** 信用卡帳單比對畫面 */
+  importOpen: boolean;
+  setImportOpen: (v: boolean) => void;
+  /** 從 MOZE 匯入畫面 */
+  mozeOpen: boolean;
+  setMozeOpen: (v: boolean) => void;
 }
 
 const Ctx = createContext<OverlayCtx | null>(null);
@@ -41,7 +47,11 @@ export function useOverlay(): OverlayCtx {
 export function OverlayProvider({ children }: { children: ReactNode }) {
   const [editor, setEditor] = useState<EditorRequest | null>(null);
   const [topup, setTopup] = useState<TopupRequest | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [mozeOpen, setMozeOpen] = useState(false);
   return (
-    <Ctx.Provider value={{ editor, openEditor: setEditor, closeEditor: () => setEditor(null), topup, openTopup: setTopup }}>{children}</Ctx.Provider>
+    <Ctx.Provider value={{ editor, openEditor: setEditor, closeEditor: () => setEditor(null), topup, openTopup: setTopup, importOpen, setImportOpen, mozeOpen, setMozeOpen }}>
+      {children}
+    </Ctx.Provider>
   );
 }

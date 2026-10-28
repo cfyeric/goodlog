@@ -321,7 +321,15 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
   }
 
   return (
-    <div className="sheet enter" role="dialog" aria-modal="true" aria-label={d.orig ? "編輯記錄" : "新增記錄"}>
+    <div
+      className="sheet enter"
+      role="dialog"
+      aria-modal="true"
+      aria-label={d.orig ? "編輯記錄" : "新增記錄"}
+      onClickCapture={(e) => {
+        if (u.armed && !(e.target as HTMLElement).closest(".danger")) ui({ armed: null });
+      }}
+    >
       <div className="in">
         <div className="shead">
           <button className="iconbtn" aria-label="取消" onClick={closeEditor}>
