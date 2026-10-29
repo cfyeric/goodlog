@@ -41,6 +41,12 @@ export async function verifyCode(email: string, token: string): Promise<string |
   return error ? errText(error.message, error.status) : null;
 }
 
+/** 用 Google 帳號登入：跳到 Google 選帳號，完成後回到好記 */
+export async function signInGoogle(): Promise<string | null> {
+  const { error } = await supa().auth.signInWithOAuth({ provider: "google", options: { redirectTo: location.origin + location.pathname } });
+  return error ? errText(error.message, error.status) : null;
+}
+
 export async function signOut(): Promise<void> {
   await supa().auth.signOut();
 }
