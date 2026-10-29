@@ -42,7 +42,7 @@ for (const file of files) {
       }
     });
 
-    it("儲值卡餘額與入帳提醒（不同的今天）", () => {
+    it("儲值卡餘額與到期提醒（不同的今天）", () => {
       for (const td of F.todays) {
         const sv = (L.settings.cards || []).filter((c) => c.svOf).map((c) => ({ id: c.id, bal: svBalance(L, c, td) }));
         expect(sv, td).toEqual(F.legacy.sv[td]);
