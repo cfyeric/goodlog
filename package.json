@@ -12,9 +12,12 @@
     "test:watch": "vitest",
     "typecheck": "tsc -b --noEmit",
     "snapshot:legacy": "TZ=Asia/Taipei node scripts/legacy-snapshot.mjs",
-    "build:artifact": "npm run build && node scripts/artifact-html.mjs"
+    "build:artifact": "npm run build && node scripts/artifact-html.mjs",
+    "dev:web": "vite --mode web",
+    "build:web": "tsc -b && vite build --mode web"
   },
   "dependencies": {
+    "@supabase/supabase-js": "2.117.3",
     "react": "19.1.10",
     "react-dom": "19.1.10"
   },

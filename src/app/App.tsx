@@ -13,10 +13,18 @@ import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
 import { Cats, Subcats } from "./pages/Cats";
 import { useOverlay } from "./editor/context";
+import { supabaseConfigured } from "../data/supabaseClient";
+import { AuthGate } from "./auth/AuthGate";
+import type { LedgerStore } from "../data/store";
 
 export function App() {
+  if (supabaseConfigured) return <AuthGate>{(store) => <Shell store={store} />}</AuthGate>;
+  return <Shell />;
+}
+
+function Shell({ store }: { store?: LedgerStore }) {
   return (
-    <AppProvider>
+    <AppProvider store={store}>
       <NavProvider>
         <OverlayProvider>
           <Main />

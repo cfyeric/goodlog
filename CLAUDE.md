@@ -42,6 +42,7 @@ src/data/     資料存取
   claudeStore.ts  claude.ai 雲端資料庫（window.claude.use("db")）
   demoStore.ts    本機範例資料
   merge.ts        多裝置同時寫入同一個月的合併邏輯
+  supabaseStore.ts Supabase 版的讀寫（版本號 rev 防止多裝置互相覆蓋）；supabaseClient.ts 連線與登入
 src/app/      React 畫面
   state.tsx       帳本狀態與寫入（AppProvider）；nav.tsx 目前在哪一頁
   shell/          頁首提醒、底部選單、提示訊息
@@ -64,6 +65,17 @@ fixtures/     比對用資料；fixtures/private/ 是真實帳本，已在 .giti
 - 備份檔裡 `app: "ririzhang"` 是格式辨識用，不要改（舊名稱）。
 - 雲端快照的物件是唯讀的，要修改前一定先複製（claudeStore 已處理）。
 - 寫入某個月只送出差異，寫入前重新讀雲端再合併（merge.ts），不要整個月覆蓋。
+
+## Supabase 版（一般網站）
+
+除了 claude.ai，新版也可以放在一般網站，資料存在 Supabase（專案 `goodlog`，亞太區）。
+
+- `npm run build:web` / `npm run dev:web` 讀 `.env.web`（Project URL、publishable key，可以公開）。沒有這兩個值的建置照舊走 claude.ai 或範例資料。
+- **service_role / secret key 絕對不要放進專案或網頁。**
+- 資料表與權限：`supabase/schema.sql`（使用者在 Supabase 後台的 SQL Editor 執行）。格式跟 claude.ai 版一樣：`ledger_settings.data` = 設定，`ledger_months.items` = 每月記錄。每列只有本人讀寫得到（RLS）。
+- 登入：信箱收登入碼（Email OTP）。Supabase 的 Magic Link 信件範本要加上 `{{ .Token }}` 才會有數字碼。
+- 從 claude.ai 搬資料：舊版「完整備份」下載 JSON → 新版「從備份檔還原」。
+- 這個開發環境連不到 supabase.co，測試用 `tests/supabase-store.test.ts`（記憶體版資料庫）和瀏覽器模擬回應。
 
 ## 新舊版比對測試
 

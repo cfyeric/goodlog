@@ -7,6 +7,7 @@ import { useApp } from "../state";
 import { useNav } from "../nav";
 import { useOverlay } from "../editor/context";
 import { Ic } from "../ui/Icon";
+import { useAccount } from "../auth/AuthGate";
 
 interface Downloads {
   save(o: { filename: string; data: string }): Promise<void>;
@@ -59,6 +60,7 @@ export function Settings({ ledger }: { ledger: Ledger }) {
   const { nav, go, view, arm } = useNav();
   const { setMozeOpen } = useOverlay();
   const [restore, setRestore] = useState<(RestorePreview & { name: string }) | null>(null);
+  const account = useAccount();
 
   const delAlias = (id: string, nm: string) => {
     const k = "aliases:" + id;
@@ -223,6 +225,17 @@ export function Settings({ ledger }: { ledger: Ledger }) {
             從 MOZE 匯入（CSV）
           </button>
         </div>
+        {account ? (
+          <div className="card">
+            <div className="lbl-s">帳號</div>
+            <div className="setrow" style={{ justifyContent: "space-between" }}>
+              <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", fontSize: 14 }}>{account.email}</span>
+              <button className="btn" onClick={() => void account.signOut()}>
+                登出
+              </button>
+            </div>
+          </div>
+        ) : null}
         <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 2px" }}>資料存在你的雲端帳本，只有你看得到。</p>
       </div>
     </>
