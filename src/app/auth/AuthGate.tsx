@@ -1,9 +1,9 @@
-/** Supabase 版的登入畫面：輸入信箱 → 收信取得登入碼 → 輸入登入碼 */
+/** Supabase 版的登入畫面：Google 帳號，或輸入信箱 → 點信裡的登入連結（Supabase 內建寄信不能改範本，信裡只有連結） */
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
 import type { LedgerStore } from "../../data/store";
 import { createSupabaseStore } from "../../data/supabaseStore";
-import { currentSession, onSessionChange, sendCode, signInGoogle, signOut, supabaseAdapter, verifyCode } from "../../data/supabaseClient";
+import { currentSession, onSessionChange, sendCode, signInGoogle, signOut, supabaseAdapter } from "../../data/supabaseClient";
 
 interface Account {
   email: string;
@@ -42,8 +42,7 @@ function Login() {
       return "";
     }
   });
-  const [step, setStep] = useState<"email" | "code">("email");
-  const [code, setCode] = useState("");
+  const [step, setStep] = useState<"email" | "sent">("email");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const send = async () => {
@@ -59,16 +58,7 @@ function Login() {
     } catch {
       /* 不能存就算了 */
     }
-    setStep("code");
-  };
-  const verify = async () => {
-    const t = code.replace(/\s/g, "");
-    if (!/^\d{6,10}$/.test(t)) return setErr("請輸入信裡的數字登入碼");
-    setBusy(true);
-    setErr("");
-    const r = await verifyCode(email.trim(), t);
-    setBusy(false);
-    if (r) setErr(r);
+    setStep("sent");
   };
   return (
     <div className="app">
@@ -105,7 +95,7 @@ function Login() {
           </button>
           <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0", color: "var(--muted-foreground)", fontSize: 12 }}>
             <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
-            或用信箱登入碼
+            或用信箱登入
             <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
           </div>
           <form
@@ -119,7 +109,7 @@ function Login() {
               <input id="lg-email" type="email" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
             </div>
             <p className="pkhint" style={{ margin: "8px 0 0" }}>
-              我們會寄一封有登入碼的信給你，不需要密碼。
+              我們會寄一封有登入連結的信給你，不需要密碼。
             </p>
             {err ? (
               <div className="err" role="alert" style={{ marginTop: 8 }}>
@@ -127,52 +117,40 @@ function Login() {
               </div>
             ) : null}
             <button className="btn primary" type="submit" disabled={busy} style={{ width: "100%", height: 44, marginTop: 14 }}>
-              {busy ? "寄送中…" : "寄登入碼"}
+              {busy ? "寄送中…" : "寄登入連結"}
             </button>
           </form>
           </>
         ) : (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void verify();
-            }}
-          >
-            <p style={{ margin: "0 0 10px", fontSize: 14 }}>
-              登入碼已寄到 <b>{email.trim()}</b>，請到信箱查看。
+          <div>
+            <p style={{ margin: "0 0 6px", fontSize: 15, fontWeight: 600 }}>請到信箱點登入連結</p>
+            <p style={{ margin: 0, fontSize: 14 }}>
+              登入連結已寄到 <b>{email.trim()}</b>。打開信，點「Log In」或「Confirm email address」，就會回到好記並完成登入。
             </p>
-            <div className="namefield">
-              <label htmlFor="lg-code">登入碼</label>
-              <input id="lg-code" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value)} placeholder="信裡的數字" autoFocus />
-            </div>
+            <p className="pkhint" style={{ margin: "10px 0 0" }}>
+              請用同一支手機或同一台電腦打開信，登入才會留在這裡。沒收到請看看垃圾郵件匣；信是英文的，寄件人是 Supabase。
+            </p>
             {err ? (
               <div className="err" role="alert" style={{ marginTop: 8 }}>
                 {err}
               </div>
             ) : null}
-            <button className="btn primary" type="submit" disabled={busy} style={{ width: "100%", height: 44, marginTop: 14 }}>
-              {busy ? "登入中…" : "登入"}
-            </button>
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
               <button
                 type="button"
                 className="btn"
                 onClick={() => {
                   setStep("email");
-                  setCode("");
                   setErr("");
                 }}
               >
                 換一個信箱
               </button>
               <button type="button" className="btn" disabled={busy} onClick={() => void send()}>
-                重寄一次
+                {busy ? "寄送中…" : "重寄一次"}
               </button>
             </div>
-            <p className="pkhint" style={{ margin: "10px 0 0" }}>
-              信裡如果是連結而不是數字，直接點連結也可以登入。沒收到請看看垃圾郵件匣。
-            </p>
-          </form>
+          </div>
         )}
       </div>
     </div>

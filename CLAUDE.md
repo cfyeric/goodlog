@@ -73,7 +73,7 @@ fixtures/     比對用資料；fixtures/private/ 是真實帳本，已在 .giti
 - `npm run build:web` / `npm run dev:web` 讀 `.env.web`（Project URL、publishable key，可以公開）。沒有這兩個值的建置照舊走 claude.ai 或範例資料。
 - **service_role / secret key 絕對不要放進專案或網頁。**
 - 資料表與權限：`supabase/schema.sql`（使用者在 Supabase 後台的 SQL Editor 執行）。格式跟 claude.ai 版一樣：`ledger_settings.data` = 設定，`ledger_months.items` = 每月記錄。每列只有本人讀寫得到（RLS）。
-- 登入：信箱收登入碼（Email OTP）。Supabase 的 Magic Link 信件範本要加上 `{{ .Token }}` 才會有數字碼。
+- 登入：Google 帳號（主要），或信箱登入連結（備用）。Supabase 內建寄信不能改信件範本（要自己的 SMTP 才能改），所以信裡只有連結、沒有數字碼。
 - 從 claude.ai 搬資料：舊版「完整備份」下載 JSON → 新版「從備份檔還原」。
 - 這個開發環境連不到 supabase.co，測試用 `tests/supabase-store.test.ts`（記憶體版資料庫）和瀏覽器模擬回應。
 
