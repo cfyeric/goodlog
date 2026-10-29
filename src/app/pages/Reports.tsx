@@ -45,8 +45,8 @@ function Donut({ sl, total, label }: { sl: Slice[]; total: number; label: string
     acc += len;
     return { len, off, a0, a1, mid: (a0 + a1) / 2, o };
   });
-  type Lab = { o: Slice; a0: number; a1: number; mid: number; side: number; y0: number; lo: number; hi: number; y: number; px: number };
-  const lab: Lab[] = arcs.map((x) => ({ o: x.o, a0: x.a0, a1: x.a1, mid: x.mid, side: Math.cos(x.mid) >= 0 ? 1 : -1, y0: cy + Math.sin(x.mid) * r0, lo: 0, hi: 0, y: 0, px: 0 }));
+  type Lab = { o: Slice; a0: number; a1: number; mid: number; side: number; y0: number; lo: number; hi: number; y: number; px: number; ay: number; ath: number };
+  const lab: Lab[] = arcs.map((x) => ({ o: x.o, a0: x.a0, a1: x.a1, mid: x.mid, side: Math.cos(x.mid) >= 0 ? 1 : -1, y0: cy + Math.sin(x.mid) * r0, lo: 0, hi: 0, y: 0, px: 0, ay: 0, ath: 0 }));
   lab.forEach((l) => {
     let lo = 1e9, hi = -1e9;
     for (let k = 0; k <= 40; k++) {
@@ -60,23 +60,27 @@ function Donut({ sl, total, label }: { sl: Slice[]; total: number; label: string
     l.lo = Math.max(lo, 18);
     l.hi = Math.min(hi, H - 18);
   });
+  // 同一側的標籤上下至少間隔 GAP：太擠時可以離開自己那一塊的高度，引線改成折線連過去
   [1, -1].forEach((sd) => {
     const L = lab.filter((l) => l.side === sd).sort((a, b) => a.y0 - b.y0);
-    for (let it = 0; it < 3; it++) {
-      let prev = -1e9;
-      L.forEach((l) => {
-        l.y = Math.min(Math.max(it ? l.y : l.y0, prev + GAP), Math.max(l.hi, l.lo));
-        prev = l.y;
-      });
-      let nx = 1e9;
-      for (let i = L.length - 1; i >= 0; i--) {
-        const l = L[i];
-        l.y = Math.max(Math.min(l.y, nx - GAP), l.lo);
-        nx = l.y;
-      }
+    if (!L.length) return;
+    const top = 18, bot = H - 18;
+    const gap = L.length > 1 ? Math.min(GAP, (bot - top) / (L.length - 1)) : GAP;
+    // 先放在理想位置（這一塊的中間高度，限制在這一塊的範圍內），由上往下推開
+    let prev = -1e9;
+    L.forEach((l) => {
+      const ideal = Math.min(Math.max(l.y0, l.lo), Math.max(l.hi, l.lo));
+      l.y = Math.max(ideal, prev + gap, top);
+      prev = l.y;
+    });
+    // 超出底部的話由下往上推回來
+    let nx = bot + gap;
+    for (let i = L.length - 1; i >= 0; i--) {
+      L[i].y = Math.min(L[i].y, nx - gap);
+      nx = L[i].y;
     }
     L.forEach((l) => {
-      l.y = Math.min(Math.max(l.y, 18), H - 18);
+      l.y = Math.min(Math.max(l.y, top), bot);
     });
   });
   // 每條引線都水平：在這一塊的範圍內找與標籤同高的起點
@@ -103,7 +107,10 @@ function Donut({ sl, total, label }: { sl: Slice[]; total: number; label: string
       }
     }
     l.px = cx + Math.cos(best.th) * r0;
-    l.y = best.py;
+    // 標籤跟這一塊同高就畫水平線；被推開了就從這一塊畫折線過去
+    l.ay = best.py;
+    l.ath = best.th;
+    if (Math.abs(best.py - l.y) <= 1) l.y = best.py;
   });
   const cut = (t: string, maxW: number) => {
     const w = (ch: string) => (/[\x00-\xff]/.test(ch) ? 7 : 12);
@@ -129,8 +136,18 @@ function Donut({ sl, total, label }: { sl: Slice[]; total: number; label: string
         const anc = l.side > 0 ? "start" : "end";
         return (
           <g key={"l" + i}>
-            <line x1={l.px.toFixed(1)} y1={l.y.toFixed(1)} x2={ex.toFixed(1)} y2={l.y.toFixed(1)} stroke="var(--foreground)" strokeOpacity=".55" strokeWidth="1" />
-            <circle cx={l.px.toFixed(1)} cy={l.y.toFixed(1)} r="1.8" fill="var(--foreground)" fillOpacity=".7" />
+            {l.ay === l.y ? (
+              <line x1={l.px.toFixed(1)} y1={l.y.toFixed(1)} x2={ex.toFixed(1)} y2={l.y.toFixed(1)} stroke="var(--foreground)" strokeOpacity=".55" strokeWidth="1" />
+            ) : (
+              <polyline
+                points={`${l.px.toFixed(1)},${l.ay.toFixed(1)} ${(cx + Math.cos(l.ath) * (R + 4)).toFixed(1)},${(cy + Math.sin(l.ath) * (R + 4)).toFixed(1)} ${(ex - l.side * 2).toFixed(1)},${l.y.toFixed(1)} ${ex.toFixed(1)},${l.y.toFixed(1)}`}
+                fill="none"
+                stroke="var(--foreground)"
+                strokeOpacity=".55"
+                strokeWidth="1"
+              />
+            )}
+            <circle cx={l.px.toFixed(1)} cy={l.ay.toFixed(1)} r="1.8" fill="var(--foreground)" fillOpacity=".7" />
             <text x={tx} y={(l.y - 4).toFixed(1)} textAnchor={anc} fontSize="12" fill="var(--foreground)">
               {cut(l.o.name, cx - R - 14 - 2)}
             </text>
