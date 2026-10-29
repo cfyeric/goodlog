@@ -34,6 +34,9 @@ interface OverlayCtx {
   /** 從 MOZE 匯入畫面 */
   mozeOpen: boolean;
   setMozeOpen: (v: boolean) => void;
+  /** 搜尋記錄畫面 */
+  searchOpen: boolean;
+  setSearchOpen: (v: boolean) => void;
 }
 
 const Ctx = createContext<OverlayCtx | null>(null);
@@ -49,8 +52,9 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
   const [topup, setTopup] = useState<TopupRequest | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [mozeOpen, setMozeOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   return (
-    <Ctx.Provider value={{ editor, openEditor: setEditor, closeEditor: () => setEditor(null), topup, openTopup: setTopup, importOpen, setImportOpen, mozeOpen, setMozeOpen }}>
+    <Ctx.Provider value={{ editor, openEditor: setEditor, closeEditor: () => setEditor(null), topup, openTopup: setTopup, importOpen, setImportOpen, mozeOpen, setMozeOpen, searchOpen, setSearchOpen }}>
       {children}
     </Ctx.Provider>
   );

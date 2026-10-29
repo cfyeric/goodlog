@@ -7,7 +7,8 @@ import { budgetAlerts, type BudgetStatus } from "../../core/budget";
 import { useApp } from "../state";
 import { useNav } from "../nav";
 import { useOverlay } from "../editor/context";
-import { Seal, UiIcon } from "../ui/Icon";
+import { Ic, Seal, UiIcon } from "../ui/Icon";
+import { MonthSwiper } from "./MonthSwiper";
 import { TxRow } from "../ui/TxRow";
 
 const WD = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"];
@@ -15,40 +16,10 @@ const WD = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"
 export function Home({ ledger }: { ledger: Ledger }) {
   const { today } = useApp();
   const { nav, go } = useNav();
+  const { setSearchOpen } = useOverlay();
   const s = ledger.settings;
   const [Y, M] = nav.ym.split("-").map(Number);
-  const first = new Date(Y, M - 1, 1);
-  const off = (first.getDay() + 6) % 7;
-  const start = new Date(Y, M - 1, 1 - off);
-  const cells = [];
-  for (let i = 0; i < 42; i++) {
-    const d = new Date(start);
-    d.setDate(start.getDate() + i);
-    const ds = ymd(d);
-    if (i === 35 && d.getMonth() !== M - 1) break;
-    const list = txOfDay(ledger, ds);
-    const e = list.some((t) => t.type === "expense");
-    const n = list.some((t) => t.type === "income");
-    const cls = ["day"];
-    if (d.getMonth() !== M - 1) cls.push("out");
-    if (d.getDay() % 6 === 0) cls.push("we");
-    if (ds === today) cls.push("today");
-    if (ds === nav.sel) cls.push("sel");
-    cells.push(
-      <button
-        key={ds}
-        className={cls.join(" ")}
-        aria-label={`${d.getMonth() + 1}月${d.getDate()}日${list.length ? "，" + list.length + "筆" : ""}`}
-        onClick={() => go({ sel: ds, ym: ds.slice(0, 7) })}
-      >
-        <span className="d">{d.getDate()}</span>
-        <span className="dots">
-          {e ? <i className="e" /> : null}
-          {n ? <i className="n" /> : null}
-        </span>
-      </button>,
-    );
-  }
+  const pick = (ds: string) => go({ sel: ds, ym: ds.slice(0, 7) });
   const mItems = (ledger.months[nav.ym]?.items || []).filter((t) => !t.pending && t.type !== "transfer");
   const mExp = mItems.filter((t) => t.type === "expense").reduce((a, t) => a + net(t), 0);
   const mInc = mItems.filter((t) => t.type === "income").reduce((a, t) => a + net(t), 0);
@@ -56,25 +27,20 @@ export function Home({ ledger }: { ledger: Ledger }) {
   const sd = pd(nav.sel);
   const dExp = list.filter((t) => t.type === "expense").reduce((a, t) => a + net(t), 0);
   const mon = (k: number) => {
-    const d = pd(nav.ym + "-01");
-    d.setMonth(d.getMonth() + k);
-    const ym = ymd(d).slice(0, 7);
+    const ym = addYm(nav.ym, k);
     go({ ym, sel: ym === today.slice(0, 7) ? today : ym + "-01" });
   };
 
   return (
     <>
       <div className="top">
-        <button className="iconbtn" aria-label="上個月" onClick={() => mon(-1)}>
-          <UiIcon name="left" />
-        </button>
-        <h1 className="num" style={{ textAlign: "center" }}>
+        <h1 className="num">
           {Y} 年 {M} 月<small>{mItems.length} 筆記錄</small>
         </h1>
-        <button className="iconbtn" aria-label="下個月" onClick={() => mon(1)}>
-          <UiIcon name="right" />
+        <button className="iconbtn" aria-label="搜尋記錄" title="搜尋記錄" onClick={() => setSearchOpen(true)}>
+          <Ic name="search" />
         </button>
-        <button className="iconbtn" aria-label="回到今天" onClick={() => go({ sel: today, ym: today.slice(0, 7) })}>
+        <button className="iconbtn" aria-label="回到今天" title="回到今天" onClick={() => go({ sel: today, ym: today.slice(0, 7) })}>
           <UiIcon name="today" />
         </button>
       </div>
@@ -84,7 +50,7 @@ export function Home({ ledger }: { ledger: Ledger }) {
             <span key={w}>{w}</span>
           ))}
         </div>
-        <div className="grid">{cells}</div>
+        <MonthSwiper ym={nav.ym} onMonth={mon} render={(ym) => <MonthGrid ledger={ledger} ym={ym} sel={nav.sel} today={today} onPick={pick} />} />
       </div>
       <div className="monthsum">
         <div className="pill">
@@ -126,6 +92,46 @@ export function Home({ ledger }: { ledger: Ledger }) {
       )}
     </>
   );
+}
+
+/** 加減月份：「2026-10」加 1 是「2026-11」 */
+function addYm(ym: string, k: number): string {
+  const d = pd(ym + "-01");
+  d.setMonth(d.getMonth() + k);
+  return ymd(d).slice(0, 7);
+}
+
+/** 一個月的日期格子（含前後月份補滿的日子） */
+function MonthGrid({ ledger, ym, sel, today, onPick }: { ledger: Ledger; ym: string; sel: string; today: string; onPick: (ds: string) => void }) {
+  const [Y, M] = ym.split("-").map(Number);
+  const first = new Date(Y, M - 1, 1);
+  const off = (first.getDay() + 6) % 7;
+  const start = new Date(Y, M - 1, 1 - off);
+  const cells = [];
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    const ds = ymd(d);
+    if (i === 35 && d.getMonth() !== M - 1) break;
+    const list = txOfDay(ledger, ds);
+    const e = list.some((t) => t.type === "expense");
+    const n = list.some((t) => t.type === "income");
+    const cls = ["day"];
+    if (d.getMonth() !== M - 1) cls.push("out");
+    if (d.getDay() % 6 === 0) cls.push("we");
+    if (ds === today) cls.push("today");
+    if (ds === sel) cls.push("sel");
+    cells.push(
+      <button key={ds} className={cls.join(" ")} aria-label={`${d.getMonth() + 1}月${d.getDate()}日${list.length ? "，" + list.length + "筆" : ""}`} onClick={() => onPick(ds)}>
+        <span className="d">{d.getDate()}</span>
+        <span className="dots">
+          {e ? <i className="e" /> : null}
+          {n ? <i className="n" /> : null}
+        </span>
+      </button>,
+    );
+  }
+  return <div className="grid">{cells}</div>;
 }
 
 /** 花到 80% 以上的預算，可以左右滑動 */

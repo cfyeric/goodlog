@@ -1,3 +1,10 @@
 /* 新版額外的樣式（舊版樣式在 legacy.css） */
 .app { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 body{margin:0}
+
+/* 日曆左右滑動切換月份 */
+.mswipe{position:relative;overflow:hidden;touch-action:pan-y;-webkit-user-select:none;user-select:none}
+.mtrack{position:relative;will-change:transform}
+.mpane.prev,.mpane.next{position:absolute;top:0;width:100%}
+.mpane.prev{right:calc(100% + 12px)}
+.mpane.next{left:calc(100% + 12px)}

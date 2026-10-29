@@ -9,6 +9,7 @@ import { EditorHost } from "./editor/EditorSheet";
 import { TopupHost } from "./editor/TopupDialog";
 import { ImportHost } from "./import/ImportSheet";
 import { MozeHost } from "./import/MozeSheet";
+import { SearchHost } from "./search/SearchSheet";
 import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
 import { Cats, Subcats } from "./pages/Cats";
@@ -31,6 +32,7 @@ function Shell({ store }: { store?: LedgerStore }) {
           <TabBar />
           <ImportHost />
           <MozeHost />
+          <SearchHost />
           <EditorHost />
           <TopupHost />
           <Toast />
