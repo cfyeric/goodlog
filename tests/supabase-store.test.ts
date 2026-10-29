@@ -151,4 +151,23 @@ describe("Supabase 資料存取", () => {
     expect(a.s.mode).toBe("offline");
     expect(a.errs[0]).toContain("連不上");
   });
+
+  it("同時改設定和多個月份（例如 MOZE 匯入）：寫完後畫面上的新類別不會被舊設定蓋回去", async () => {
+    const f = fakeDb();
+    const a = await open(f.db);
+    const s0 = a.snap.settings!;
+    const s1 = { ...s0, cards: [...(s0.cards || []), { id: "new", name: "新卡" }] } as Settings;
+    // 別台裝置剛好也在 9 月記了一筆，寫完後要把合併結果通知畫面
+    f.race(() => {
+      f.st.months["2026-09"] = { value: [tx({ id: "other" })], rev: 1 };
+    });
+    a.s.writeSettings(s1);
+    a.s.writeMonth("2026-09", [tx({ id: "x", cardId: "new" })]);
+    a.s.writeMonth("2026-10", [tx({ id: "y", cardId: "new" })]);
+    await wait(700);
+    expect(a.snap.settings!.cards!.map((c) => c.id)).toContain("new");
+    expect(ids(a.snap.months["2026-09"].items)).toEqual(["other", "x"]);
+    expect(ids(a.snap.months["2026-10"].items)).toEqual(["y"]);
+    expect(f.st.settings!.value.cards!.map((c) => c.id)).toContain("new");
+  });
 });

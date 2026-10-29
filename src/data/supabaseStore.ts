@@ -186,6 +186,8 @@ export function createSupabaseStore(db: SupaAdapter, opt: SupaStoreOptions = {})
     },
     writeMonth(key: string, items: Tx[]) {
       if (mode !== "live") return;
+      // 畫面上的改動也記在這裡的快照；之後通知畫面時才不會用舊內容把它蓋回去
+      snap = { ...snap, months: { ...snap.months, [key]: { items } } };
       const d = diffMonth(BASE[key] || new Map(), items);
       if (!d) return;
       BASE[key] = d.nextBase;
@@ -207,6 +209,7 @@ export function createSupabaseStore(db: SupaAdapter, opt: SupaStoreOptions = {})
     },
     replaceMonth(key: string, items: Tx[]) {
       if (mode !== "live") return Promise.resolve();
+      snap = { ...snap, months: { ...snap.months, [key]: { items: items.slice() } } };
       BASE[key] = baseOf(items);
       busy[key] = (busy[key] || 0) + 1;
       const p = (chains[key] || Promise.resolve())
@@ -220,6 +223,7 @@ export function createSupabaseStore(db: SupaAdapter, opt: SupaStoreOptions = {})
     },
     writeSettings(settings: Settings) {
       if (mode !== "live") return;
+      snap = { ...snap, settings };
       if (setTimer) clearTimeout(setTimer);
       settingsPending = true;
       setTimer = setTimeout(() => {
