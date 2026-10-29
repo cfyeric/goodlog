@@ -231,16 +231,25 @@ export function Reports({ ledger }: { ledger: Ledger }) {
           </button>
         ))}
       </div>
-      {nav.rTab === "overview" ? <Overview s={s} tx={all} /> : <ReportTabView s={s} tx={all} nav={nav} />}
+      {nav.rTab === "overview" ? <Overview s={s} tx={all} saves={savesIn(ledger, r.s, r.e)} showSave={hasSaves(ledger)} /> : <ReportTabView s={s} tx={all} nav={nav} />}
     </>
   );
 }
 
-function Overview({ s, tx }: { s: Settings; tx: Tx[] }) {
+/** 期間內轉到儲蓄帳戶的轉帳（不算支出） */
+function savesIn(l: Ledger, s: string, e: string): Tx[] {
+  const out: Tx[] = [];
+  for (const k in l.months) for (const t of l.months[k].items || []) if (t.type === "transfer" && t.date >= s && t.date <= e) out.push(t);
+  return out;
+}
+const hasSaves = (l: Ledger) => Object.values(l.months).some((m) => (m.items || []).some((t) => t.type === "transfer"));
+
+function Overview({ s, tx, saves, showSave }: { s: Settings; tx: Tx[]; saves: Tx[]; showSave: boolean }) {
   const { go } = useNav();
   const exp = tx.filter((t) => t.type === "expense"), inc = tx.filter((t) => t.type === "income");
   const E = exp.reduce((a, t) => a + net(t), 0), N = inc.reduce((a, t) => a + net(t), 0);
-  const mx = Math.max(E, N, 1);
+  const SV = saves.reduce((a, t) => a + (+t.amount || 0), 0);
+  const mx = Math.max(E, N, showSave ? SV : 0, 1);
   const bar = (l: string, v: number, c: string, cnt: number) => (
     <div className="bar">
       <span>{l}</span>
@@ -271,13 +280,7 @@ function Overview({ s, tx }: { s: Settings; tx: Tx[] }) {
         <div className="bars">
           {bar("支出", E, "var(--exp)", exp.length)}
           {bar("收入", N, "var(--inc)", inc.length)}
-        </div>
-        <div className="row" style={{ marginTop: 8, borderTop: "1px solid var(--line)", borderBottom: 0, paddingBottom: 0 }}>
-          <b>結餘</b>
-          <b className="num" style={{ color: N - E < 0 ? "var(--exp)" : "var(--inc)" }}>
-            {N - E < 0 ? "−" : "+"}
-            {formatMoney(N - E)}
-          </b>
+          {showSave ? bar("儲蓄", SV, "var(--xfer)", saves.length) : null}
         </div>
       </div>
       <div className="card">
