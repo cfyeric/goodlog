@@ -24,6 +24,8 @@ export interface MozeOptions {
   optReward: boolean;
   /** 應收款項記成支出 */
   optRecv: boolean;
+  /** 轉進這些帳戶（例如儲蓄帳戶）的轉帳要匯入；不算支出 */
+  saveAccs?: string[];
 }
 
 export interface MozePlan {
@@ -35,6 +37,8 @@ export interface MozePlan {
   skip: Record<string, number>;
   /** 之前已經匯入過的筆數 */
   dup: number;
+  /** 有轉入記錄的帳戶與筆數（不含信用卡繳款），給使用者選哪些是儲蓄帳戶 */
+  xferAccs: Record<string, number>;
   minD: string;
   maxD: string;
 }
@@ -97,6 +101,16 @@ export function mozeAnalyze(l: Ledger, rows: string[][], o: MozeOptions, newId: 
   const skip: Record<string, number> = {};
   const seen: Record<string, number> = {};
   const items: Tx[] = [];
+  const xferAccs: Record<string, number> = {};
+  const save = new Set(o.saveAccs || []);
+  // 轉出記錄：日期、時間、金額 → 轉出的帳戶，用來找轉入那一筆是從哪裡轉來的
+  const outs: Record<string, string[]> = {};
+  for (let i = 1; i < rows.length; i++) {
+    const R = rows[i];
+    if (!R || ci.type < 0 || String(R[ci.type] ?? "").trim() !== "轉出") continue;
+    const k = [R[ci.date], ci.time >= 0 ? R[ci.time] : "", Math.abs(parseFloat(String(R[ci.amt]).replace(/,/g, "")) || 0)].join("|");
+    (outs[k] ||= []).push(ci.acc >= 0 ? String(R[ci.acc] ?? "").trim() : "");
+  }
   let dup = 0;
   let minD = "9999";
   let maxD = "0000";
@@ -130,6 +144,35 @@ export function mozeAnalyze(l: Ledger, rows: string[][], o: MozeOptions, newId: 
       cname = cname || "代付";
     }
     const label = (ty === "轉出" || ty === "轉入") && gname === "信用卡繳款" ? "信用卡繳款" : ty === "轉出" || ty === "轉入" ? "轉帳" : ty;
+    let xfer = false;
+    if (ty === "轉入" && label === "轉帳") {
+      const acc = v("acc");
+      xferAccs[acc] = (xferAccs[acc] || 0) + 1;
+      xfer = save.has(acc);
+    }
+    if (xfer && /^\d{4}-\d{1,2}-\d{1,2}$/.test(ds)) {
+      const [yy, mm, dd] = ds.split("-");
+      const date = yy + "-" + pad(+mm) + "-" + pad(+dd);
+      const key = R.join("\u0001");
+      seen[key] = (seen[key] || 0) + 1;
+      const id = "mz" + hash53(key + "#" + seen[key]);
+      cnt["轉到儲蓄帳戶"] = (cnt["轉到儲蓄帳戶"] || 0) + 1;
+      if (existing.has(id)) {
+        dup++;
+        continue;
+      }
+      const amount = Math.abs(parseFloat(v("amt").replace(/,/g, "")) || 0);
+      const from = (outs[[R[ci.date], ci.time >= 0 ? R[ci.time] : "", amount].join("|")] || []).shift() || "";
+      const t: Tx = {
+        id, type: "transfer", amount, date, time: /^\d{1,2}:\d{2}/.test(v("time")) ? v("time").slice(0, 5).padStart(5, "0") : "",
+        name: v("name"), note: v("desc"), tags: v("tags").split(/[\s,，]+/).map((x) => x.replace(/^#/, "")).filter(Boolean), toAcc: v("acc"), src: "moze",
+      };
+      if (from) t.fromAcc = from;
+      if (date < minD) minD = date;
+      if (date > maxD) maxD = date;
+      items.push(t);
+      continue;
+    }
     if (!type || !/^\d{4}-\d{1,2}-\d{1,2}$/.test(ds)) {
       skip[label] = (skip[label] || 0) + 1;
       continue;
@@ -166,7 +209,7 @@ export function mozeAnalyze(l: Ledger, rows: string[][], o: MozeOptions, newId: 
     if (date > maxD) maxD = date;
     items.push(t);
   }
-  return { plan: { items, add, cnt, skip, dup, minD, maxD }, err: items.length || dup ? "" : "沒有讀到可以匯入的記錄。" };
+  return { plan: { items, add, cnt, skip, dup, minD, maxD, xferAccs }, err: items.length || dup || Object.keys(xferAccs).length ? "" : "沒有讀到可以匯入的記錄。" };
 }
 
 /** 套用匯入：新設定與變動的月份 */

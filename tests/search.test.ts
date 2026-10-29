@@ -16,7 +16,7 @@ const L = (): Ledger => ({
       items: [
         tx({ id: "b", date: "2026-10-02", time: "08:00", amount: 65, merchant: "7-11", tags: ["早餐"] }),
         tx({ id: "c1", date: "2026-10-02", time: "12:00", catId: "c", amount: 1200, pay: "card", cardId: "k", projectId: "p", note: "拉麵 Ichiran" }),
-        tx({ id: "t", type: "transfer", date: "2026-10-03", amount: 120 } as never),
+        tx({ id: "t", type: "transfer", date: "2026-10-03", amount: 3000, toAcc: "儲蓄帳戶" } as never),
       ],
     },
   },
@@ -38,7 +38,11 @@ describe("搜尋記錄", () => {
     expect(ids("午餐 富士山")).toEqual(["c1"]);
     expect(ids("午餐 7-11")).toEqual([]);
   });
-  it("數字找金額相同的記錄，不包含轉帳", () => {
+  it("找得到轉到儲蓄帳戶的轉帳", () => {
+    expect(ids("儲蓄")).toEqual(["t"]);
+    expect(ids("3000")).toEqual(["t"]);
+  });
+  it("數字找金額相同的記錄", () => {
     expect(ids("120")).toEqual(["a"]);
     expect(ids("1200")).toEqual(["c1"]);
   });

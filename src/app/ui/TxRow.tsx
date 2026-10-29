@@ -9,7 +9,27 @@ const md = (d: string) => +d.slice(5, 7) + "/" + +d.slice(8, 10);
 
 /** 記錄列表的一列；點了打開編輯 */
 export function TxRow({ t, s, showDate }: { t: Tx; s: Settings; showDate?: boolean }) {
-  const { openEditor, openTopup } = useOverlay();
+  const { openEditor, openTopup, openXfer } = useOverlay();
+  if (t.type === "transfer") {
+    const sub: string[] = [];
+    if (showDate) sub.push(md(t.date));
+    sub.push((t.fromAcc ? "從 " + t.fromAcc + " " : "") + "轉入，不算支出");
+    if (t.time && !showDate) sub.push(t.time);
+    if (t.note && t.note !== t.name) sub.push(t.note);
+    return (
+      <button className="tx" onClick={() => openXfer({ tx: t })}>
+        <Seal c={{ name: "存", icon: "piggy-bank", color: "#8A8F8B" }} />
+        <span className="txm">
+          <span className="n" style={{ display: "block" }}>{t.name || "轉到 " + (t.toAcc || "儲蓄帳戶")}</span>
+          <span className="s" style={{ display: "block" }}>{sub.join(" · ")}</span>
+        </span>
+        <span className="txr">
+          <span className="amt t">{formatMoney(+t.amount || 0)}</span>
+          <span className="chips">{t.toAcc ? <span className="chip">{t.toAcc}</span> : null}</span>
+        </span>
+      </button>
+    );
+  }
   if (t.type === "topup") {
     const sv = cardOf(s, t);
     const pc = svParent(s, sv);

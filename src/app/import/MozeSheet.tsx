@@ -50,6 +50,15 @@ function MozeSheet() {
   if (P && !loading) {
     const imp = P.items.length;
     const ex = P.items.filter((t) => t.type === "expense").length, inc = P.items.filter((t) => t.type === "income").length;
+    const xf = P.items.filter((t) => t.type === "transfer").length;
+    const saved = new Set(opt.saveAccs || []);
+    const toggleAcc = (a: string) =>
+      setOpt((o) => {
+        const n = new Set(o.saveAccs || []);
+        if (n.has(a)) n.delete(a);
+        else n.add(a);
+        return { ...o, saveAccs: [...n] };
+      });
     const kv = (o: Record<string, number>) =>
       Object.entries(o).map(([k, v]) => (
         <div key={k} className="row">
@@ -76,11 +85,28 @@ function MozeSheet() {
             <SwitchRow label="應收款項記成支出" hint="代付、借出會記在「其他」，對象寫進備註" on={opt.optRecv} onToggle={() => setOpt((o) => ({ ...o, optRecv: !o.optRecv }))} />
           </div>
         </div>
+        {Object.keys(P.xferAccs).length ? (
+          <div className="card" style={{ marginTop: 12, padding: "6px 16px" }}>
+            <div className="lbl-s" style={{ marginTop: 8 }}>
+              轉到儲蓄帳戶
+            </div>
+            <p className="pkhint" style={{ margin: "0 0 4px" }}>
+              選哪些是你的儲蓄帳戶。轉進這些帳戶的轉帳會列在當天明細和帳戶頁，不算支出。
+            </p>
+            <div className="optrows" style={{ overflow: "visible" }}>
+              {Object.entries(P.xferAccs)
+                .sort((a, b) => b[1] - a[1])
+                .map(([a, c]) => (
+                  <SwitchRow key={a} label={a || "（沒有帳戶名稱）"} hint={`轉入 ${n(c)} 筆`} on={saved.has(a)} onToggle={() => toggleAcc(a)} />
+                ))}
+            </div>
+          </div>
+        ) : null}
         {Object.keys(P.skip).length ? (
           <div className="card" style={{ marginTop: 12 }}>
             <div className="lbl-s">不會匯入</div>
             <p className="pkhint" style={{ margin: "0 0 4px" }}>
-              好記不記轉帳、繳卡費和帳戶餘額。
+              好記不記一般轉帳、繳卡費和帳戶餘額；轉到儲蓄帳戶的可以在上面選擇匯入。
             </p>
             <div className="rows">{kv(P.skip)}</div>
           </div>
@@ -118,7 +144,7 @@ function MozeSheet() {
           </p>
         ) : null}
         <button className="btn primary" style={{ width: "100%", height: 44, marginTop: 14 }} disabled={!imp} onClick={go}>
-          {imp ? `匯入 ${n(imp)} 筆（支出 ${n(ex)}、收入 ${n(inc)}）` : "沒有新的記錄"}
+          {imp ? `匯入 ${n(imp)} 筆（支出 ${n(ex)}、收入 ${n(inc)}${xf ? `、存款 ${n(xf)}` : ""}）` : "沒有新的記錄"}
         </button>
       </>
     );

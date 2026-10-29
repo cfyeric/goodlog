@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import type { Ledger } from "../../core/types";
 import { pd, ymd } from "../../core/dates";
-import { findCategory, pendingList, txOfDay } from "../../core/ledger";
+import { findCategory, pendingList, transfersOfDay, txOfDay } from "../../core/ledger";
 import { formatMoney, net } from "../../core/money";
 import { budgetAlerts, type BudgetStatus } from "../../core/budget";
 import { useApp } from "../state";
@@ -23,9 +23,11 @@ export function Home({ ledger }: { ledger: Ledger }) {
   const mItems = (ledger.months[nav.ym]?.items || []).filter((t) => !t.pending && t.type !== "transfer");
   const mExp = mItems.filter((t) => t.type === "expense").reduce((a, t) => a + net(t), 0);
   const mInc = mItems.filter((t) => t.type === "income").reduce((a, t) => a + net(t), 0);
-  const list = txOfDay(ledger, nav.sel);
+  const spent = txOfDay(ledger, nav.sel);
+  // 轉到儲蓄帳戶的轉帳也列在當天明細（不算支出）
+  const list = spent.concat(transfersOfDay(ledger, nav.sel)).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
   const sd = pd(nav.sel);
-  const dExp = list.filter((t) => t.type === "expense").reduce((a, t) => a + net(t), 0);
+  const dExp = spent.filter((t) => t.type === "expense").reduce((a, t) => a + net(t), 0);
   const mon = (k: number) => {
     const ym = addYm(nav.ym, k);
     go({ ym, sel: ym === today.slice(0, 7) ? today : ym + "-01" });
@@ -75,7 +77,7 @@ export function Home({ ledger }: { ledger: Ledger }) {
         <h2 className="num">
           {sd.getMonth() + 1}/{sd.getDate()} {WD[sd.getDay()]}
         </h2>
-        <span>{list.length ? "支出 " + formatMoney(dExp) : ""}</span>
+        <span>{spent.length ? "支出 " + formatMoney(dExp) : ""}</span>
       </div>
       {list.length ? (
         <div className="card" style={{ padding: "4px 12px" }}>

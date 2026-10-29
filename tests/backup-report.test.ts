@@ -86,3 +86,31 @@ describe("MOZE 匯入", () => {
     expect(mozeAnalyze(L(), [["a", "b"]], { optReward: true, optRecv: false }, id).err).toContain("不是 MOZE");
   });
 });
+
+describe("MOZE 匯入：轉到儲蓄帳戶", () => {
+  const csv =
+    "帳戶,幣種,記錄類型,主類別,子類別,金額,手續費,折扣,名稱,商家,日期,時間,專案,描述,標籤,對象\n" +
+    "薪轉帳戶,TWD,轉出,轉帳,,-5000,0,0,每月存款,,2026/10/5,09:00,,,,\n" +
+    "儲蓄帳戶,TWD,轉入,轉帳,,5000,0,0,每月存款,,2026/10/5,09:00,,,,\n" +
+    "薪轉帳戶,TWD,轉出,轉帳,,-1000,0,0,,,2026/10/6,,,,,\n" +
+    "錢包,TWD,轉入,轉帳,,1000,0,0,,,2026/10/6,,,,,\n" +
+    "薪轉帳戶,TWD,轉出,信用卡繳款,,-3000,0,0,,,2026/10/7,,,,,\n" +
+    "國泰Cube卡,TWD,轉入,信用卡繳款,,3000,0,0,,,2026/10/7,,,,,\n" +
+    "現金,TWD,支出,飲食,午餐,-120,0,0,便當,,2026/10/3,12:10,,,,\n";
+  let k = 0;
+  const id = () => "m" + ++k;
+  it("列出有轉入的帳戶（不含信用卡繳款），沒選就不匯入", () => {
+    const { plan } = mozeAnalyze(L(), parseCSV(csv), { optReward: true, optRecv: false }, id);
+    expect(plan!.xferAccs).toEqual({ 儲蓄帳戶: 1, 錢包: 1 });
+    expect(plan!.items.filter((t) => t.type === "transfer")).toEqual([]);
+  });
+  it("選了儲蓄帳戶：匯入成轉帳，記下從哪個帳戶轉來；一般支出的 id 不變", () => {
+    const before = mozeAnalyze(L(), parseCSV(csv), { optReward: true, optRecv: false }, id).plan!.items.find((t) => t.type === "expense")!.id;
+    const { plan } = mozeAnalyze(L(), parseCSV(csv), { optReward: true, optRecv: false, saveAccs: ["儲蓄帳戶"] }, id);
+    const tr = plan!.items.filter((t) => t.type === "transfer");
+    expect(tr).toHaveLength(1);
+    expect(tr[0]).toMatchObject({ amount: 5000, date: "2026-10-05", time: "09:00", toAcc: "儲蓄帳戶", fromAcc: "薪轉帳戶", name: "每月存款", src: "moze" });
+    expect(plan!.items.find((t) => t.type === "expense")!.id).toBe(before);
+    expect(plan!.cnt["轉到儲蓄帳戶"]).toBe(1);
+  });
+});

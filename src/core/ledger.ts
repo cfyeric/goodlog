@@ -28,6 +28,18 @@ export function txOfDay(l: Ledger, date: DateStr): Tx[] {
     .sort((a, b) => (a.time || "").localeCompare(b.time || ""));
 }
 
+/** 某一天的轉帳（轉到儲蓄帳戶等），依時間排序；不算支出、收入 */
+export function transfersOfDay(l: Ledger, date: DateStr): Tx[] {
+  return ((l.months[date.slice(0, 7)] || { items: [] }).items || [])
+    .filter((t) => t.date === date && t.type === "transfer")
+    .sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+}
+
+/** 某個月的轉帳 */
+export function transfersOfMonth(l: Ledger, ym: string): Tx[] {
+  return ((l.months[ym] || { items: [] }).items || []).filter((t) => t.type === "transfer");
+}
+
 /** 所有待入帳記錄，依日期排序 */
 export function pendingList(l: Ledger): Tx[] {
   const out: Tx[] = [];

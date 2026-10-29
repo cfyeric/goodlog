@@ -9,6 +9,7 @@ import { useApp } from "../state";
 import { useNav } from "../nav";
 import { useOverlay } from "../editor/context";
 import { Ic, Seal, UiIcon } from "../ui/Icon";
+import { savingAccounts } from "../editor/TransferDialog";
 import { BMini, BudgetRow, EntRow, GearBtn, LazyInput, MonthHead, OptRow, RecursCard, SelList, SwitchRow } from "./common";
 
 const PAY_COLOR = { cash: "var(--foreground)", card: "var(--xfer)" };
@@ -16,7 +17,7 @@ const PAY_COLOR = { cash: "var(--foreground)", card: "var(--xfer)" };
 export function Accounts({ ledger, onImport }: { ledger: Ledger; onImport: () => void }) {
   const { today, setSettings, canWrite, toast } = useApp();
   const { nav, go } = useNav();
-  const { openTopup } = useOverlay();
+  const { openTopup, openXfer } = useOverlay();
   const s = ledger.settings;
   const addCard = () => {
     if (!canWrite()) return;
@@ -75,6 +76,17 @@ export function Accounts({ ledger, onImport }: { ledger: Ledger; onImport: () =>
   const svUseN = Object.values(use).reduce((a, o) => a + o.n, 0);
   const cardUseL = exp.filter((t) => payOf(s, t) === "card" && !isSvTx(s, t));
   const cardUseV = cardUseL.reduce((a, t) => a + net(t), 0);
+  // 轉到儲蓄帳戶（轉帳不算支出）：依轉入的帳戶加總
+  const xfers = its.filter((t) => t.type === "transfer");
+  const saveAccs = savingAccounts(ledger.months);
+  const saveBy: Record<string, { v: number; n: number }> = {};
+  xfers.forEach((t) => {
+    const k = t.toAcc || "儲蓄帳戶";
+    saveBy[k] = saveBy[k] || { v: 0, n: 0 };
+    saveBy[k].v += +t.amount || 0;
+    saveBy[k].n++;
+  });
+  const saveV = xfers.reduce((a, t) => a + (+t.amount || 0), 0);
   const sel = (k: string | null) => {
     go({ accSet: null, accSel: k });
     window.scrollTo(0, 0);
@@ -87,6 +99,35 @@ export function Accounts({ ledger, onImport }: { ledger: Ledger; onImport: () =>
   if (nav.accSel) {
     const k = nav.accSel;
     const back = () => sel(null);
+    if (k.startsWith("save:")) {
+      const acc = k.slice(5);
+      const l = xfers.filter((t) => (acc ? (t.toAcc || "儲蓄帳戶") === acc : true));
+      const tot = l.reduce((a, t) => a + (+t.amount || 0), 0);
+      return (
+        <>
+          {head}
+          <SelList
+            s={s}
+            title={acc || "全部儲蓄"}
+            list={l}
+            onBack={back}
+            backLabel="全部帳戶"
+            sum={
+              <div className="rsum">
+                <div>
+                  <span>存入</span>
+                  <b className="num">{formatMoney(tot)}</b>
+                </div>
+                <div>
+                  <span>筆數</span>
+                  <b className="num">{l.length}</b>
+                </div>
+              </div>
+            }
+          />
+        </>
+      );
+    }
     if (k === "cash") return (
       <>
         {head}
@@ -249,6 +290,23 @@ export function Accounts({ ledger, onImport }: { ledger: Ledger; onImport: () =>
           </>
         ) : null}
       </div>
+      {saveAccs.length || xfers.length ? (
+        <div className="card elist" style={{ marginTop: 12 }}>
+          <div className="esub" style={{ marginTop: 0 }}>
+            儲蓄（轉帳，不算支出）· 本月存入 {formatMoney(saveV)}
+          </div>
+          {(saveAccs.length ? saveAccs : Object.keys(saveBy)).map((a) => (
+            <EntRow key={a} name={a} icon="piggy-bank" v={saveBy[a]?.v || 0} n={saveBy[a]?.n || 0} onClick={() => sel("save:" + a)} />
+          ))}
+          <button
+            className="addbtn"
+            style={{ width: "100%", height: 36, marginTop: 8 }}
+            onClick={() => openXfer({ date: ym === today.slice(0, 7) ? today : ym + "-01", toAcc: saveAccs[0] || "" })}
+          >
+            ＋ 記一筆存款
+          </button>
+        </div>
+      ) : null}
       <button className="addbtn" style={{ width: "100%", height: 40, marginTop: 12 }} onClick={onImport}>
         匯入信用卡帳單比對
       </button>
