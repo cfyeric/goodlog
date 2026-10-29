@@ -58,7 +58,7 @@ export function Home({ ledger }: { ledger: Ledger }) {
         </div>
         <MonthSwiper ym={nav.ym} onMonth={mon} render={(ym) => <MonthGrid ledger={ledger} ym={ym} sel={nav.sel} today={today} onPick={pick} />} />
       </div>
-      <MonthBars exp={mExp} inc={mInc} save={mSave} saveN={mSaves.length} showSave={hasSave} />
+      <MonthBars exp={mExp} inc={mInc} save={mSave} showSave={hasSave} />
       <BudgetStrip ledger={ledger} ym={nav.ym} />
       <PendingCard ledger={ledger} />
       <div className="sechead">
@@ -85,10 +85,10 @@ export function Home({ ledger }: { ledger: Ledger }) {
 }
 
 /** 本月支出、收入、儲蓄的長條，和結餘（收入 − 支出，儲蓄不算支出） */
-function MonthBars({ exp, inc, save, saveN, showSave }: { exp: number; inc: number; save: number; saveN: number; showSave: boolean }) {
+function MonthBars({ exp, inc, save, showSave }: { exp: number; inc: number; save: number; showSave: boolean }) {
   const mx = Math.max(exp, inc, showSave ? save : 0, 1);
   const bal = inc - exp;
-  const bar = (l: string, v: number, c: string, n?: number) => (
+  const bar = (l: string, v: number, c: string) => (
     <div className="bar">
       <span>{l}</span>
       <span className="track">
@@ -96,7 +96,6 @@ function MonthBars({ exp, inc, save, saveN, showSave }: { exp: number; inc: numb
       </span>
       <b className="num" style={{ color: c }}>
         {formatMoney(v)}
-        {n != null ? <span style={{ color: "var(--muted)", fontWeight: 500, fontSize: 12 }}> · {n}筆</span> : null}
       </b>
     </div>
   );
@@ -105,7 +104,7 @@ function MonthBars({ exp, inc, save, saveN, showSave }: { exp: number; inc: numb
       <div className="bars">
         {bar("支出", exp, "var(--exp)")}
         {bar("收入", inc, "var(--inc)")}
-        {showSave ? bar("儲蓄", save, "var(--xfer)", saveN) : null}
+        {showSave ? bar("儲蓄", save, "var(--xfer)") : null}
       </div>
       <div className="row" style={{ marginTop: 8, borderTop: "1px solid var(--line)", borderBottom: 0, paddingBottom: 0 }}>
         <b>結餘</b>
