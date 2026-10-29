@@ -28,7 +28,7 @@ export interface Nav {
   rAsc: boolean;
   /** 排行顯示全部（預設只顯示前 50 筆） */
   rRankAll: boolean;
-  /** 使用者關掉的繳費提醒內容 */
+  /** 使用者關掉的入帳提醒內容 */
   remDismiss: string | null;
   /** 正在確認刪除的項目（第二次按才真的刪） */
   armed: string | null;

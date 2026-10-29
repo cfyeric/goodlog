@@ -38,7 +38,7 @@ describe("預算", () => {
   });
 });
 
-describe("繳費提醒", () => {
+describe("入帳提醒", () => {
   const l = ledger([tx({ id: "p", date: "2026-10-19", pending: true, amount: 1200, name: "電費" })], {
     categories: [{ id: "c1", name: "水費", type: "expense", groupId: "g" }],
     recurs: [{ id: "w", kind: "recur", unit: "month", every: 1, dom: 24, start: "2026-10-24", post: "remind", done: 0, tpl: { type: "expense", amount: 400, catId: "c1" } }],

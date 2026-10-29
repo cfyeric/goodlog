@@ -26,7 +26,7 @@ export function Banner() {
   return null;
 }
 
-/** 繳費提醒：已到期的待入帳，和 7 天內到期的提醒入帳 */
+/** 入帳提醒：已到期的待入帳，和 7 天內到期的提醒入帳 */
 export function RemindBar() {
   const { ledger, today } = useApp();
   const { nav, go } = useNav();
@@ -44,7 +44,7 @@ export function RemindBar() {
     <div className="rmbar" role="status">
       <div className="rmhd">
         <Ic name="bell" />
-        <b>繳費提醒</b>
+        <b>入帳提醒</b>
         <small>
           {nDue ? nDue + " 筆待入帳" : ""}
           {nDue && L.length > nDue ? "、" : ""}

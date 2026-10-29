@@ -13,7 +13,7 @@ export type Reminder =
   /** 即將到期的提醒入帳；amt 為 null 表示分期（每期金額不同） */
   | { due: false; rule: Rule; date: DateStr; name: string; amt: number | null };
 
-/** 頁面最上方「繳費提醒」要列出的項目，依日期排序 */
+/** 頁面最上方「入帳提醒」要列出的項目，依日期排序 */
 export function remindList(l: Ledger, today: DateStr): Reminder[] {
   const out: Reminder[] = [];
   pendingList(l).forEach((t) => {
