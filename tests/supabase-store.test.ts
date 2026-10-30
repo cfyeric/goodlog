@@ -170,4 +170,45 @@ describe("Supabase 資料存取", () => {
     expect(ids(a.snap.months["2026-10"].items)).toEqual(["y"]);
     expect(f.st.settings!.value.cards!.map((c) => c.id)).toContain("new");
   });
+
+  it("本機副本：先顯示上次的內容，雲端讀完換成最新的，再存回副本", async () => {
+    const f = fakeDb();
+    f.st.settings = { value: { ...(await (async () => { const g = fakeDb(); const a = await open(g.db); return a.snap.settings!; })()) }, rev: 1 };
+    f.st.months["2026-10"] = { value: [tx({ id: "new" })], rev: 3 };
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const slow: SupaAdapter = { ...f.db, getMonths: async (y) => (await gate, f.db.getMonths(y)) };
+    const saved: unknown[] = [];
+    const snaps: LedgerSnapshot[] = [];
+    const s = createSupabaseStore(slow, { pollMs: 0, cache: { load: async () => ({ settings: f.st.settings!.value, months: { "2026-10": { items: [tx({ id: "old" })] } } }), save: (v) => saved.push(v) } });
+    const p = s.start((n) => snaps.push(n));
+    await wait(20);
+    expect(snaps.length).toBeGreaterThan(0);
+    expect(ids(snaps[snaps.length - 1].months["2026-10"].items)).toEqual(["old"]);
+    expect(snaps[snaps.length - 1].monthsReady).toBe(false);
+    release();
+    await p;
+    const last = snaps[snaps.length - 1];
+    expect(ids(last.months["2026-10"].items)).toEqual(["new"]);
+    expect(last.monthsReady).toBe(true);
+    await wait(1700);
+    expect(saved.length).toBe(1);
+  });
+
+  it("連不上雲端但有本機副本：照樣顯示上次的資料", async () => {
+    const f = fakeDb();
+    const g = fakeDb();
+    const settings = (await open(g.db)).snap.settings!;
+    f.db.getSettings = async () => {
+      await wait(10);
+      throw new Error("network");
+    };
+    const errs: string[] = [];
+    let last: LedgerSnapshot | null = null;
+    const s = createSupabaseStore(f.db, { pollMs: 0, cache: { load: async () => ({ settings, months: { "2026-10": { items: [tx({ id: "c" })] } } }), save: () => {} } });
+    await s.start((n) => (last = n), (m) => errs.push(m));
+    expect(ids(last!.months["2026-10"].items)).toEqual(["c"]);
+    expect(s.mode).toBe("offline");
+    expect(errs[0]).toContain("上次的資料");
+  });
 });

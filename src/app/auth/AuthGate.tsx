@@ -4,6 +4,7 @@ import type { Session } from "@supabase/supabase-js";
 import type { LedgerStore } from "../../data/store";
 import { createSupabaseStore } from "../../data/supabaseStore";
 import { currentSession, onSessionChange, sendCode, signInGoogle, signOut, supabaseAdapter } from "../../data/supabaseClient";
+import { deleteLedger, loadLedger, saveLedger } from "../../data/localCache";
 
 interface Account {
   email: string;
@@ -21,7 +22,15 @@ export function AuthGate({ children }: { children: (store: LedgerStore) => React
   }, []);
   const uid = session?.user.id;
   // 換帳號才重建；token 更新不用重建
-  const store = useMemo(() => (uid ? createSupabaseStore(supabaseAdapter(uid)) : null), [uid]);
+  const store = useMemo(
+    () =>
+      uid
+        ? createSupabaseStore(supabaseAdapter(uid), {
+            cache: { load: () => loadLedger(uid), save: (v) => void saveLedger(uid, { ...v, at: Date.now() }) },
+          })
+        : null,
+    [uid],
+  );
   if (session === undefined)
     return (
       <div className="app">
@@ -31,7 +40,12 @@ export function AuthGate({ children }: { children: (store: LedgerStore) => React
       </div>
     );
   if (!session || !store) return <Login />;
-  return <AccountCtx.Provider value={{ email: session.user.email || "", signOut }}>{children(store)}</AccountCtx.Provider>;
+  // 登出時順便刪掉這台裝置上的帳本副本
+  const out = async () => {
+    await deleteLedger(session.user.id);
+    await signOut();
+  };
+  return <AccountCtx.Provider value={{ email: session.user.email || "", signOut: out }}>{children(store)}</AccountCtx.Provider>;
 }
 
 function Login() {

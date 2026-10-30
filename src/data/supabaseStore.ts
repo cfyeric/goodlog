@@ -37,6 +37,11 @@ export interface SupaStoreOptions {
   pollMs?: number;
   /** 有其他裝置寫入時，最多重試幾次 */
   retries?: number;
+  /** 本機副本：打開時先顯示上次的內容，雲端讀完再換成最新的 */
+  cache?: {
+    load(): Promise<{ settings: Settings; months: Months } | null>;
+    save(v: { settings: Settings; months: Months }): void;
+  };
 }
 
 export function createSupabaseStore(db: SupaAdapter, opt: SupaStoreOptions = {}): LedgerStore & { sync(): Promise<void> } {
@@ -63,9 +68,21 @@ export function createSupabaseStore(db: SupaAdapter, opt: SupaStoreOptions = {})
     if (document.visibilityState === "visible") void store.sync();
   };
 
+  /** 雲端讀完之後才存本機副本（只顯示副本時不存，避免把舊內容又存回去） */
+  let fresh = false;
+  let cacheTimer: ReturnType<typeof setTimeout> | null = null;
+  const saveCache = () => {
+    if (!opt.cache || !fresh || !snap.settings) return;
+    if (cacheTimer) clearTimeout(cacheTimer);
+    cacheTimer = setTimeout(() => {
+      cacheTimer = null;
+      if (snap.settings) opt.cache!.save({ settings: snap.settings, months: snap.months });
+    }, 1500);
+  };
   const update = (p: Partial<LedgerSnapshot>) => {
     snap = { ...snap, ...p };
     if (!stopped) emit(snap);
+    saveCache();
   };
   const setMonthSnap = (k: string, items: Tx[]) => update({ months: { ...snap.months, [k]: { items } } });
 
@@ -107,34 +124,57 @@ export function createSupabaseStore(db: SupaAdapter, opt: SupaStoreOptions = {})
       stopped = false;
       const my = ++gen;
       const alive = () => my === gen && !stopped;
+      fresh = false;
+      // 設定和所有月份同時向雲端要，同時先拿本機副本出來顯示
+      const remote = Promise.all([db.getSettings(), db.getMonths()]);
+      let shownCache = false;
+      if (opt.cache)
+        opt.cache.load().then(
+          (c) => {
+            if (!c || !c.settings || fresh || !alive() || snap.settings) return;
+            shownCache = true;
+            const months: Months = {};
+            for (const k in c.months || {}) {
+              const it = Array.isArray(c.months[k]?.items) ? c.months[k].items : [];
+              months[k] = { items: it };
+              BASE[k] = baseOf(it);
+            }
+            // monthsReady 先維持 false：雲端讀完前不補產生週期記錄
+            update({ settings: migrateSettings(clone(c.settings)).settings, months });
+          },
+          () => undefined,
+        );
       try {
-        const row = await db.getSettings();
+        const [row, ms] = await remote;
         if (!alive()) return;
         if (row) {
           settingsRev = row.rev;
           const { settings, changed } = migrateSettings(clone(row.value));
-          update({ settings });
-          if (changed) store.writeSettings(settings);
+          // 顯示副本期間如果改過設定，以本機的為準（寫入時會用新的版本號）
+          if (!settingsPending) update({ settings });
+          if (changed && !settingsPending) store.writeSettings(settings);
         } else {
           const settings = defaultSettings();
           update({ settings });
           await writeSettingsNow(clone(settings));
         }
-        const ms = await db.getMonths();
-        if (!alive()) return;
         const months: Months = {};
         for (const k in ms) {
           const it = Array.isArray(ms[k].value) ? clone(ms[k].value) : [];
           months[k] = { items: it };
-          BASE[k] = baseOf(it);
           REV[k] = ms[k].rev;
+          // 還在寫入中的月份保留畫面上的內容，寫完會再更新
+          if (busy[k]) months[k] = snap.months[k] || months[k];
+          else BASE[k] = baseOf(it);
         }
+        for (const k in snap.months) if (!months[k] && busy[k]) months[k] = snap.months[k];
+        fresh = true;
         update({ months, monthsReady: true });
       } catch {
         if (!alive()) return;
         mode = "offline";
         update({});
-        fail("連不上雲端資料庫，請確認網路後重新整理");
+        fail(shownCache || snap.settings ? "連不上雲端，目前顯示的是上次的資料，變更不會儲存" : "連不上雲端資料庫，請確認網路後重新整理");
         return;
       }
       if (!alive()) return;
@@ -188,6 +228,7 @@ export function createSupabaseStore(db: SupaAdapter, opt: SupaStoreOptions = {})
       if (mode !== "live") return;
       // 畫面上的改動也記在這裡的快照；之後通知畫面時才不會用舊內容把它蓋回去
       snap = { ...snap, months: { ...snap.months, [key]: { items } } };
+      saveCache();
       const d = diffMonth(BASE[key] || new Map(), items);
       if (!d) return;
       BASE[key] = d.nextBase;
@@ -210,6 +251,7 @@ export function createSupabaseStore(db: SupaAdapter, opt: SupaStoreOptions = {})
     replaceMonth(key: string, items: Tx[]) {
       if (mode !== "live") return Promise.resolve();
       snap = { ...snap, months: { ...snap.months, [key]: { items: items.slice() } } };
+      saveCache();
       BASE[key] = baseOf(items);
       busy[key] = (busy[key] || 0) + 1;
       const p = (chains[key] || Promise.resolve())
@@ -224,6 +266,7 @@ export function createSupabaseStore(db: SupaAdapter, opt: SupaStoreOptions = {})
     writeSettings(settings: Settings) {
       if (mode !== "live") return;
       snap = { ...snap, settings };
+      saveCache();
       if (setTimer) clearTimeout(setTimer);
       settingsPending = true;
       setTimer = setTimeout(() => {
