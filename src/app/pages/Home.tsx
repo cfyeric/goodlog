@@ -10,6 +10,7 @@ import { useOverlay } from "../editor/context";
 import { Ic, Seal, UiIcon } from "../ui/Icon";
 import { MonthSwiper } from "./MonthSwiper";
 import { TxRow } from "../ui/TxRow";
+import { HpBar } from "../ui/HpBar";
 
 const WD = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"];
 
@@ -58,7 +59,9 @@ export function Home({ ledger }: { ledger: Ledger }) {
         </div>
         <MonthSwiper ym={nav.ym} onMonth={mon} render={(ym) => <MonthGrid ledger={ledger} ym={ym} sel={nav.sel} today={today} onPick={pick} />} />
       </div>
-      <MonthBars exp={mExp} inc={mInc} save={mSave} showSave={hasSave} />
+      <div className="card" style={{ marginTop: 12 }}>
+        <HpBar inc={mInc} exp={mExp} save={mSave} showSave={hasSave} />
+      </div>
       <BudgetStrip ledger={ledger} ym={nav.ym} />
       <PendingCard ledger={ledger} />
       <div className="sechead">
@@ -81,31 +84,6 @@ export function Home({ ledger }: { ledger: Ledger }) {
         </div>
       )}
     </>
-  );
-}
-
-/** 本月支出、收入、儲蓄的長條（儲蓄不算支出） */
-function MonthBars({ exp, inc, save, showSave }: { exp: number; inc: number; save: number; showSave: boolean }) {
-  const mx = Math.max(exp, inc, showSave ? save : 0, 1);
-  const bar = (l: string, v: number, c: string) => (
-    <div className="bar">
-      <span>{l}</span>
-      <span className="track">
-        <span className="fill" style={{ display: "block", width: Math.max((v / mx) * 100, v ? 2 : 0) + "%", background: c }} />
-      </span>
-      <b className="num" style={{ color: c }}>
-        {formatMoney(v)}
-      </b>
-    </div>
-  );
-  return (
-    <div className="card" style={{ marginTop: 12 }}>
-      <div className="bars">
-        {bar("支出", exp, "var(--exp)")}
-        {bar("收入", inc, "var(--inc)")}
-        {showSave ? bar("儲蓄", save, "var(--xfer)") : null}
-      </div>
-    </div>
   );
 }
 

@@ -8,3 +8,14 @@ body{margin:0}
 .mpane.prev,.mpane.next{position:absolute;top:0;width:100%}
 .mpane.prev{right:calc(100% + 12px)}
 .mpane.next{left:calc(100% + 12px)}
+
+/* 收支血條：彩度比文字用的紅綠藍低 */
+:root{--hp-inc:oklch(.68 .085 160);--hp-save:oklch(.66 .09 258);--hp-exp:oklch(.66 .12 25);--hp-inc-t:oklch(.5 .085 160);--hp-save-t:oklch(.5 .1 258);--hp-exp-t:oklch(.52 .13 25)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--hp-inc:oklch(.62 .08 160);--hp-save:oklch(.6 .085 258);--hp-exp:oklch(.6 .11 25);--hp-inc-t:oklch(.76 .08 160);--hp-save-t:oklch(.76 .08 258);--hp-exp-t:oklch(.76 .1 25)}}
+:root[data-theme="dark"]{--hp-inc:oklch(.62 .08 160);--hp-save:oklch(.6 .085 258);--hp-exp:oklch(.6 .11 25);--hp-inc-t:oklch(.76 .08 160);--hp-save-t:oklch(.76 .08 258);--hp-exp-t:oklch(.76 .1 25)}
+.hpbar{display:flex;height:16px;border-radius:999px;overflow:hidden;background:var(--muted-bg)}
+.hpbar i{display:block;height:100%;flex:none}
+.hpbar .hpgap{flex:1 1 0;min-width:0}
+.hpi{background:var(--hp-inc)}.hps{background:var(--hp-save)}.hpe{background:var(--hp-exp)}
+.hpleg{display:flex;justify-content:space-between;gap:8px;margin-top:10px;font-size:13px;flex-wrap:wrap}
+.hpleg b{font-weight:600;font-size:14px}

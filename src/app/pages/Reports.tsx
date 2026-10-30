@@ -6,6 +6,7 @@ import { reportRange, shiftAnchor, type ReportMode } from "../../core/report";
 import { useNav, type Nav, type ReportTab } from "../nav";
 import { Ic, Seal, UiIcon, type SealLike } from "../ui/Icon";
 import { TxRow } from "../ui/TxRow";
+import { HpBar } from "../ui/HpBar";
 
 const RTABS: [ReportTab, string][] = [
   ["overview", "總覽"],
@@ -249,18 +250,6 @@ function Overview({ s, tx, saves, showSave }: { s: Settings; tx: Tx[]; saves: Tx
   const exp = tx.filter((t) => t.type === "expense"), inc = tx.filter((t) => t.type === "income");
   const E = exp.reduce((a, t) => a + net(t), 0), N = inc.reduce((a, t) => a + net(t), 0);
   const SV = saves.reduce((a, t) => a + (+t.amount || 0), 0);
-  const mx = Math.max(E, N, showSave ? SV : 0, 1);
-  const bar = (l: string, v: number, c: string, cnt: number) => (
-    <div className="bar">
-      <span>{l}</span>
-      <span className="track">
-        <span className="fill" style={{ display: "block", width: Math.max((v / mx) * 100, v ? 2 : 0) + "%", background: c }} />
-      </span>
-      <b className="num" style={{ color: c }}>
-        {formatMoney(v)} <span style={{ color: "var(--muted)", fontWeight: 500, fontSize: 12 }}>· {cnt}筆</span>
-      </b>
-    </div>
-  );
   const groups: Record<string, { v: number; col: string; gid: string }> = {};
   exp.forEach((t) => {
     const c = findCategory(s, t.catId);
@@ -277,11 +266,7 @@ function Overview({ s, tx, saves, showSave }: { s: Settings; tx: Tx[]; saves: Tx
   return (
     <div className="stack">
       <div className="card">
-        <div className="bars">
-          {bar("支出", E, "var(--exp)", exp.length)}
-          {bar("收入", N, "var(--inc)", inc.length)}
-          {showSave ? bar("儲蓄", SV, "var(--xfer)", saves.length) : null}
-        </div>
+        <HpBar inc={N} exp={E} save={SV} showSave={showSave} />
       </div>
       <div className="card">
         <div className="lbl-s" style={{ marginBottom: 12 }}>
