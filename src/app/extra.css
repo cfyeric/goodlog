@@ -22,3 +22,11 @@ body{margin:0}
 
 /* 對話框裡的日期欄：iOS 的日期輸入框有固定寬度，會撐出欄位 */
 .namefield input[type=date]{-webkit-appearance:none;appearance:none;display:block;min-width:0;max-width:100%;text-align:left}
+
+/* 記一筆：建議／支出／收入／儲蓄 四個分頁 */
+.ttabs.four{grid-template-columns:repeat(4,1fr)}
+.ttabs.four button{padding:0 6px}
+/* 儲蓄分頁：取代類別格子的說明 */
+.savenote{display:flex;align-items:center;gap:12px;margin:6px 0 14px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius);background:var(--card)}
+.savenote span{display:flex;flex-direction:column;gap:2px;font-weight:500;font-size:14px}
+.savenote small{font-weight:400;font-size:12px;color:var(--muted-foreground)}

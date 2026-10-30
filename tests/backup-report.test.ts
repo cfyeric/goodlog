@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { saveTransfer, SAVE_ACC } from "../src/core/editor";
+import { tx } from "./helpers";
 import { backupJSON, exportCSV, parseBackup, restoreMonths } from "../src/core/backup";
 import { hash53, mozeAnalyze, mozeCommit } from "../src/core/moze";
 import { reportRange, shiftAnchor } from "../src/core/report";
@@ -112,5 +114,31 @@ describe("MOZE 匯入：轉到儲蓄帳戶", () => {
     expect(tr[0]).toMatchObject({ amount: 5000, date: "2026-10-05", time: "09:00", toAcc: "儲蓄帳戶", fromAcc: "薪轉帳戶", name: "每月存款", src: "moze" });
     expect(plan!.items.find((t) => t.type === "expense")!.id).toBe(before);
     expect(plan!.cnt["轉到儲蓄帳戶"]).toBe(1);
+  });
+});
+
+describe("記一筆：儲蓄", () => {
+  const base = (): Ledger => ({ settings: L().settings, months: { "2026-10": { items: [tx({ id: "a" })] } } });
+  const draft = (over: Partial<import("../src/core/editor").Draft> = {}) =>
+    ({ orig: null, t: { id: "n", type: "transfer", amount: 0, date: "2026-10-05", time: "09:00", name: " 每月存款 ", note: "" }, ex: { amount: "5000", fee: "", discount: "" }, mode: null, scope: "one", schedTouched: false, confirmPending: false, ...over }) as import("../src/core/editor").Draft;
+  it("新增：存到國泰存錢帳戶，不帶類別和付款方式", () => {
+    const r = saveTransfer(base(), draft(), "abc");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const t = r.months["2026-10"].find((x) => x.id === "xabc")!;
+    expect(t).toEqual({ id: "xabc", type: "transfer", amount: 5000, date: "2026-10-05", time: "09:00", name: "每月存款", toAcc: SAVE_ACC });
+    expect(r.months["2026-10"].map((x) => x.id)).toEqual(["a", "xabc"]);
+  });
+  it("編輯舊記錄換月份：保留原本的帳戶，從舊月份移走", () => {
+    const old = { id: "mz1", type: "transfer", amount: 100, date: "2026-09-30", toAcc: "儲蓄帳戶", fromAcc: "薪轉帳戶", src: "moze" } as never;
+    const l = base();
+    l.months["2026-09"] = { items: [old] };
+    const r = saveTransfer(l, draft({ orig: old, t: { ...(old as object), date: "2026-10-01", name: "" } as never, ex: { amount: "200", fee: "", discount: "" } }), "zzz");
+    if (!r.ok) throw new Error();
+    expect(r.months["2026-09"]).toEqual([]);
+    expect(r.months["2026-10"].find((x) => x.id === "mz1")).toMatchObject({ amount: 200, toAcc: "儲蓄帳戶", fromAcc: "薪轉帳戶", src: "moze", date: "2026-10-01" });
+  });
+  it("沒有金額不能存", () => {
+    expect(saveTransfer(base(), draft({ ex: { amount: "", fee: "", discount: "" } }), "x").ok).toBe(false);
   });
 });

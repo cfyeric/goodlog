@@ -9,7 +9,7 @@ import { useApp } from "../state";
 import { useNav } from "../nav";
 import { useOverlay } from "../editor/context";
 import { Ic, Seal, UiIcon } from "../ui/Icon";
-import { savingAccounts } from "../editor/TransferDialog";
+import { savingAccounts } from "../../core/editor";
 import { BMini, BudgetRow, EntRow, GearBtn, LazyInput, MonthHead, OptRow, RecursCard, SelList, SwitchRow } from "./common";
 
 const PAY_COLOR = { cash: "var(--foreground)", card: "var(--xfer)" };
@@ -17,7 +17,7 @@ const PAY_COLOR = { cash: "var(--foreground)", card: "var(--xfer)" };
 export function Accounts({ ledger, onImport }: { ledger: Ledger; onImport: () => void }) {
   const { today, setSettings, canWrite, toast } = useApp();
   const { nav, go } = useNav();
-  const { openTopup, openXfer } = useOverlay();
+  const { openTopup } = useOverlay();
   const s = ledger.settings;
   const addCard = () => {
     if (!canWrite()) return;
@@ -300,16 +300,9 @@ export function Accounts({ ledger, onImport }: { ledger: Ledger; onImport: () =>
           ))}
           {!saveAccs.length && !xfers.length ? (
             <p className="pkhint" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
-              把錢轉到儲蓄帳戶時記一筆，不會算進支出，日曆上會多一條「儲蓄」。
+              存錢時在「記一筆」選「儲蓄」記錄，不會算進支出，日曆的收支條會多一段藍色的儲蓄。
             </p>
           ) : null}
-          <button
-            className="addbtn"
-            style={{ width: "100%", height: 40, marginTop: 12 }}
-            onClick={() => openXfer({ date: ym === today.slice(0, 7) ? today : ym + "-01" })}
-          >
-            ＋ 記一筆存款
-          </button>
         </div>
       )}
       <button className="addbtn" style={{ width: "100%", height: 40, marginTop: 12 }} onClick={onImport}>

@@ -8,7 +8,7 @@ import { postBase, ruleMode } from "../../core/recurrence";
 import { recurHint, schedText } from "../../core/recurrenceText";
 import {
   applyKey, catPath, confirmDraft, dateLabel, deleteGroup, deleteTx, evalExpr, KEYMAP, newDraft, planSummary, quickAmounts,
-  recRuleOf, saveDraft, stopRule, suggestCats, type Draft, type PadKey, type SchedDraft, applySched, schedOpen,
+  recRuleOf, saveDraft, saveTransfer, stopRule, suggestCats, type Draft, type PadKey, type SchedDraft, applySched, schedOpen, SAVE_ACC,
 } from "../../core/editor";
 import { useApp } from "../state";
 import { useNav } from "../nav";
@@ -22,7 +22,7 @@ import { SchedDialog } from "./SchedDialog";
 type PadTarget = "amount" | "fee" | "discount";
 
 interface UiState {
-  tab: "sug" | "expense" | "income" | null;
+  tab: "sug" | "expense" | "income" | "save" | null;
   group: string | null;
   collapsed: boolean;
   padTarget: PadTarget | null;
@@ -94,9 +94,14 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
   const cs = (s.categories || []).filter((c) => c.type === t.type && visible(c));
   const csAll = (s.categories || []).filter(visible);
   const sug = useMemo(() => suggestCats(ledger, t, csAll), [ledger, t.date, (t.time || "").slice(0, 2), csAll.length]); // eslint-disable-line
+  // 儲蓄：轉到儲蓄帳戶的轉帳，不算支出
+  const isSave = t.type === "transfer";
   let tab = u.tab;
-  if (!tab || (tab === "sug" && !sug.length)) tab = !d.orig && sug.length ? "sug" : t.type === "income" ? "income" : "expense";
-  if (tab !== "sug" && tab !== t.type) tab = t.type === "income" ? "income" : "expense";
+  if (isSave) tab = "save";
+  else {
+    if (!tab || tab === "save" || (tab === "sug" && !sug.length)) tab = !d.orig && sug.length ? "sug" : t.type === "income" ? "income" : "expense";
+    if (tab !== "sug" && tab !== t.type) tab = t.type === "income" ? "income" : "expense";
+  }
   const gList = (s.groups || []).filter((g) => g.type === t.type && cs.some((c) => c.groupId === g.id));
   const group = u.group && gList.some((g) => g.id === u.group) ? u.group : null;
   const catMode = tab === "sug" ? "sug" : group ? "sub" : "grp";
@@ -176,7 +181,8 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
 
   /* ---------- 動作 ---------- */
   const save = () => {
-    const res = saveDraft(ledger, d, today, uid8, storeMode === "readonly");
+    if (isSave && !canWrite()) return;
+    const res = isSave ? saveTransfer(ledger, d, uid8()) : saveDraft(ledger, d, today, uid8, storeMode === "readonly");
     if (!res.ok) {
       ui({ err: res.err, ...(res.openPad ? { padTarget: "amount" as const, padClosing: null } : {}) });
       toast(res.err);
@@ -213,7 +219,11 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
     closeEditor();
     toast("已停止這個週期，已記的記錄保留");
   };
-  const chooseType = (v: "sug" | "expense" | "income") => {
+  const chooseType = (v: "sug" | "expense" | "income" | "save") => {
+    if (v === "save") {
+      setD((x) => ({ ...x, t: { ...x.t, type: "transfer", catId: null }, mode: null }));
+      return ui({ tab: "save", group: null, collapsed: false, feeDlg: null });
+    }
     if (v === "sug") return ui({ tab: "sug" });
     if (t.type === v) return ui({ tab: v, group: curC?.groupId || null });
     setD((x) => {
@@ -341,8 +351,8 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
           </button>
         </div>
         {colC ? null : (
-          <div className={"ttabs" + (sug.length ? " three" : "")} role="tablist">
-            {((sug.length ? [["sug", "建議"]] : []) as [string, string][]).concat([["expense", "支出"], ["income", "收入"]]).map(([k, l]) => (
+          <div className={"ttabs" + (sug.length ? " four" : " three")} role="tablist">
+            {((sug.length ? [["sug", "建議"]] : []) as [string, string][]).concat([["expense", "支出"], ["income", "收入"], ["save", "儲蓄"]]).map(([k, l]) => (
               <button key={k} className={tab === k ? "on" : ""} role="tab" aria-selected={tab === k} onClick={() => chooseType(k as "sug")}>
                 {k === "sug" ? <Ic name="sparkles" /> : null}
                 {l}
@@ -359,7 +369,15 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
             closePad();
           }}
         >
-          {colC ? (
+          {isSave ? (
+            <div className="savenote">
+              <Seal c={{ name: "存", icon: "piggy-bank", color: "#8A8F8B" }} />
+              <span>
+                存到「{t.toAcc || d.orig?.toAcc || SAVE_ACC}」
+                <small>轉帳不算支出，也不算進預算；日曆上會算在「儲蓄」。</small>
+              </span>
+            </div>
+          ) : colC ? (
             <div className="catpick">
               <button
                 className="cat"
@@ -392,10 +410,10 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
               <span className="cur">TWD</span>
               <span className="expr">
                 {showExpr ? <small className="num">{d.ex.amount}</small> : null}
-                <b style={{ color: t.type === "income" ? "var(--inc)" : "var(--exp)" }}>{fee || dis ? r2(total).toLocaleString("zh-TW") : val ? val.toLocaleString("zh-TW") : "0"}</b>
+                <b style={{ color: isSave ? "var(--xfer)" : t.type === "income" ? "var(--inc)" : "var(--exp)" }}>{fee || dis ? r2(total).toLocaleString("zh-TW") : val ? val.toLocaleString("zh-TW") : "0"}</b>
               </span>
             </button>
-            <button
+            {isSave ? null : <button
               type="button"
               className={"amtplus" + (fee || dis ? " has" : "")}
               aria-label="手續費與折扣"
@@ -403,9 +421,9 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
               onClick={() => ui({ feeDlg: { ...d.ex }, padClosing: null, padTarget: val > 0 ? "fee" : "amount" })}
             >
               <UiIcon name="plus" />
-            </button>
+            </button>}
           </div>
-          {fee || dis ? (
+          {!isSave && (fee || dis) ? (
             <div className="breakdown num" role="button" style={{ cursor: "pointer" }} onClick={() => ui({ feeDlg: { ...d.ex }, padClosing: null, padTarget: val > 0 ? "fee" : "amount" })}>
               <span>金額 {formatMoney(val)}</span>
               {fee ? <span>手續費 +{formatMoney(fee)}</span> : null}
@@ -435,12 +453,12 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
                 </select>
               </div>
             ) : null}
-            <div className={"field" + (t.type === "expense" && t.pay !== "card" ? "" : " full")}>
+            {isSave ? null : <div className={"field" + (t.type === "expense" && t.pay !== "card" ? "" : " full")}>
               <label htmlFor="f-proj">專案</label>
               <select id="f-proj" value={t.projectId || ""} onChange={(e) => setT({ projectId: e.target.value })}>
                 {opt((s.projects || []).filter((p) => !p.archived || p.id === t.projectId), "無專案")}
               </select>
-            </div>
+            </div>}
             <div className="field">
               <label htmlFor="f-date">日期</label>
               <button type="button" id="f-date" className="datebtn" onClick={() => ui({ dp: true })}>
@@ -452,7 +470,7 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
               <label htmlFor="f-time">時間</label>
               <input id="f-time" type="time" value={t.time || ""} onChange={(e) => setT({ time: e.target.value })} />
             </div>
-            <div className="field">
+            <div className={"field" + (isSave ? " full" : "")}>
               <label htmlFor="f-name">名稱</label>
               <input
                 id="f-name"
@@ -467,7 +485,7 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
                 onBlur={() => setTimeout(() => setU((x) => (x.sugField === "name" && document.activeElement?.id !== "f-name" && document.activeElement?.id !== "f-mer" ? { ...x, sugField: null } : x)), 150)}
               />
             </div>
-            <div className="field">
+            {isSave ? null : <div className="field">
               <label htmlFor="f-mer">商家</label>
               <input
                 id="f-mer"
@@ -481,8 +499,8 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
                 }}
                 onBlur={() => setTimeout(() => setU((x) => (x.sugField === "merchant" && document.activeElement?.id !== "f-name" && document.activeElement?.id !== "f-mer" ? { ...x, sugField: null } : x)), 150)}
               />
-            </div>
-            <SuggestBar
+            </div>}
+            {isSave ? null : <SuggestBar
               ledger={ledger}
               t={t}
               field={u.sugField}
@@ -497,12 +515,12 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
                 ui({ sugField: null });
                 (document.activeElement as HTMLElement | null)?.blur?.();
               }}
-            />
-            {schedField}
-            <div className="field full">
+            />}
+            {isSave ? null : schedField}
+            {isSave ? null : <div className="field full">
               <label htmlFor="f-inv">發票號碼</label>
               <input id="f-inv" placeholder="發票號碼" value={t.invoice || ""} onChange={(e) => setT({ invoice: e.target.value })} />
-            </div>
+            </div>}
             {d.orig && d.orig.rec && !RR ? (
               <p className="pkhint" style={{ gridColumn: "1/-1", margin: 0 }}>
                 這是週期記錄的第 {d.orig.rec.i} 筆，這個週期已經停止。
@@ -513,10 +531,10 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
                 這是分期第 {d.orig.inst.i} / {d.orig.inst.n} 期（總額 {formatMoney(d.orig.inst.total || 0)}）。這裡的修改只會改這一期。
               </p>
             ) : null}
-            <div className="field full">
+            {isSave ? null : <div className="field full">
               <label htmlFor="f-tags">標籤（以空白分隔）</label>
               <TagsInput tags={t.tags || []} onChange={(tags) => setT({ tags })} />
-            </div>
+            </div>}
             <div className="field full">
               <label htmlFor="f-note">備註</label>
               <textarea id="f-note" placeholder="備註" value={t.note || ""} onChange={(e) => setT({ note: e.target.value })} />

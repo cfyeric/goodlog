@@ -22,13 +22,6 @@ export interface TopupRequest {
   note?: string;
 }
 
-/** 轉帳對話框：tx 是要編輯的那筆；沒有 tx 表示新增 */
-export interface TransferRequest {
-  tx?: Tx;
-  date?: string;
-  toAcc?: string;
-}
-
 interface OverlayCtx {
   editor: EditorRequest | null;
   openEditor: (r: EditorRequest) => void;
@@ -41,8 +34,6 @@ interface OverlayCtx {
   /** 從 MOZE 匯入畫面 */
   mozeOpen: boolean;
   setMozeOpen: (v: boolean) => void;
-  xfer: TransferRequest | null;
-  openXfer: (r: TransferRequest | null) => void;
   /** 搜尋記錄畫面 */
   searchOpen: boolean;
   setSearchOpen: (v: boolean) => void;
@@ -62,9 +53,8 @@ export function OverlayProvider({ children }: { children: ReactNode }) {
   const [importOpen, setImportOpen] = useState(false);
   const [mozeOpen, setMozeOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [xfer, openXfer] = useState<TransferRequest | null>(null);
   return (
-    <Ctx.Provider value={{ editor, openEditor: setEditor, closeEditor: () => setEditor(null), topup, openTopup: setTopup, importOpen, setImportOpen, mozeOpen, setMozeOpen, searchOpen, setSearchOpen, xfer, openXfer }}>
+    <Ctx.Provider value={{ editor, openEditor: setEditor, closeEditor: () => setEditor(null), topup, openTopup: setTopup, importOpen, setImportOpen, mozeOpen, setMozeOpen, searchOpen, setSearchOpen }}>
       {children}
     </Ctx.Provider>
   );

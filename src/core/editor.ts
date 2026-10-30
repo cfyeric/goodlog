@@ -2,7 +2,7 @@
  * 記帳畫面的邏輯（純函式）：算式、數字鍵盤、建議、存檔、刪除。
  * 跟舊版 legacy/ 的 openEditor、evalExpr、saveTx 等行為相同。
  */
-import type { Category, DateStr, Ledger, Rule, Settings, Tx } from "./types";
+import type { Category, DateStr, Ledger, Months, Rule, Settings, Tx } from "./types";
 import { pad, pd } from "./dates";
 import { allTx, cardOf, findCategory, findGroup, findProject, payOf } from "./ledger";
 import { formatMoney, net, r2 } from "./money";
@@ -612,4 +612,35 @@ export function dateLabel(ds: DateStr, today: DateStr): { main: string; wd: stri
 export function catPath(s: Settings, c: Category): string {
   const g = findGroup(s, c.groupId);
   return (g?.name ? g.name + " › " : "") + c.name;
+}
+
+/** 存款固定轉到這個帳戶 */
+export const SAVE_ACC = "國泰存錢帳戶";
+
+/** 帳本裡出現過的儲蓄帳戶名稱（轉入的帳戶），用過越多次越前面 */
+export function savingAccounts(months: Months): string[] {
+  const n: Record<string, number> = {};
+  for (const k in months) for (const t of months[k].items || []) if (t.type === "transfer" && t.toAcc) n[t.toAcc] = (n[t.toAcc] || 0) + 1;
+  return Object.keys(n).sort((a, b) => n[b] - n[a]);
+}
+
+/**
+ * 儲存一筆存款（轉到儲蓄帳戶，type "transfer"）。不算支出，沒有類別、付款方式、專案、週期。
+ * 編輯舊記錄時保留它原本的轉入、轉出帳戶（例如從 MOZE 匯入的名稱）。
+ */
+export function saveTransfer(L: Ledger, d: Draft, newId: string): SaveResult {
+  const amount = r2(evalExpr(d.ex.amount));
+  if (!(amount > 0)) return { ok: false, err: "請輸入金額。", openPad: true };
+  const t0 = d.orig;
+  const t: Tx = { id: t0 ? t0.id : "x" + newId, type: "transfer", amount, date: d.t.date, toAcc: t0?.toAcc || SAVE_ACC };
+  if (t0?.fromAcc) t.fromAcc = t0.fromAcc;
+  if (t0?.src) t.src = t0.src;
+  if (d.t.time) t.time = d.t.time;
+  if ((d.t.name || "").trim()) t.name = d.t.name!.trim();
+  if ((d.t.note || "").trim()) t.note = d.t.note!.trim();
+  const months: Record<string, Tx[]> = {};
+  if (t0) months[t0.date.slice(0, 7)] = (L.months[t0.date.slice(0, 7)]?.items || []).filter((x) => x.id !== t0.id);
+  const k = t.date.slice(0, 7);
+  months[k] = (months[k] || L.months[k]?.items || []).filter((x) => x.id !== t.id).concat([t]);
+  return { ok: true, months, msg: t0 ? "已更新存款" : "已記下存款", sel: t.date };
 }

@@ -7,7 +7,6 @@ import { Accounts } from "./pages/Accounts";
 import { Projects } from "./pages/Projects";
 import { EditorHost } from "./editor/EditorSheet";
 import { TopupHost } from "./editor/TopupDialog";
-import { TransferHost } from "./editor/TransferDialog";
 import { ImportHost } from "./import/ImportSheet";
 import { MozeHost } from "./import/MozeSheet";
 import { SearchHost } from "./search/SearchSheet";
@@ -36,7 +35,6 @@ function Shell({ store }: { store?: LedgerStore }) {
           <SearchHost />
           <EditorHost />
           <TopupHost />
-          <TransferHost />
           <Toast />
         </OverlayProvider>
       </NavProvider>
