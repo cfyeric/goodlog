@@ -410,7 +410,7 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
               <span className="cur">TWD</span>
               <span className="expr">
                 {showExpr ? <small className="num">{d.ex.amount}</small> : null}
-                <b style={{ color: isSave ? "var(--xfer)" : t.type === "income" ? "var(--inc)" : "var(--exp)" }}>{fee || dis ? r2(total).toLocaleString("zh-TW") : val ? val.toLocaleString("zh-TW") : "0"}</b>
+                <b style={{ color: isSave ? "var(--hp-save-t)" : t.type === "income" ? "var(--inc)" : "var(--exp)" }}>{fee || dis ? r2(total).toLocaleString("zh-TW") : val ? val.toLocaleString("zh-TW") : "0"}</b>
               </span>
             </button>
             {isSave ? null : <button
