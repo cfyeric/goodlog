@@ -6,6 +6,9 @@ import { useApp } from "../state";
 import { useOverlay, type TransferRequest } from "./context";
 import { Ic } from "../ui/Icon";
 
+/** 存款固定轉到這個帳戶 */
+export const SAVE_ACC = "國泰存錢帳戶";
+
 /** 帳本裡出現過的儲蓄帳戶名稱（轉入的帳戶） */
 export function savingAccounts(months: Record<string, { items: Tx[] }>): string[] {
   const n: Record<string, number> = {};
@@ -25,23 +28,20 @@ function TransferDialog({ R }: { R: TransferRequest }) {
   const t0 = R.tx;
   const [amt, setAmt] = useState(t0 ? String(t0.amount) : "");
   const [date, setDate] = useState(t0 ? t0.date : R.date || "");
-  const [to, setTo] = useState(t0?.toAcc || R.toAcc || "");
-  const [from, setFrom] = useState(t0?.fromAcc || "");
+  // 轉入帳戶固定；編輯舊記錄時保留它原本的帳戶（例如從 MOZE 匯入的名稱）
+  const to = t0?.toAcc || R.toAcc || SAVE_ACC;
   const [note, setNote] = useState(t0?.note || t0?.name || "");
   const [err, setErr] = useState("");
   const [armed, setArmed] = useState(false);
   if (!ledger) return null;
-  const accs = savingAccounts(ledger.months);
   const close = () => openXfer(null);
   const ok = () => {
     if (!canWrite()) return;
     const a = Math.round((parseFloat(amt) || 0) * 100) / 100;
-    if (!(a > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !to.trim()) return setErr("請填金額、日期和轉入的帳戶。");
+    if (!(a > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return setErr("請填金額和日期。");
     const months: Record<string, Tx[]> = {};
     if (t0) months[t0.date.slice(0, 7)] = (ledger.months[t0.date.slice(0, 7)]?.items || []).filter((x) => x.id !== t0.id);
-    const t: Tx = { ...(t0 || {}), id: t0?.id || "x" + uid8(), type: "transfer", amount: a, date, toAcc: to.trim() };
-    if (from.trim()) t.fromAcc = from.trim();
-    else delete t.fromAcc;
+    const t: Tx = { ...(t0 || {}), id: t0?.id || "x" + uid8(), type: "transfer", amount: a, date, toAcc: to };
     if (note.trim()) t.note = note.trim();
     else delete t.note;
     if (t0?.name && note.trim() !== t0.name) delete t.name;
@@ -64,40 +64,27 @@ function TransferDialog({ R }: { R: TransferRequest }) {
       <div className="dlg enter" role="dialog" aria-modal="true" aria-labelledby="xf-t">
         <h3 id="xf-t">{t0 ? "轉到儲蓄帳戶" : "記一筆存款"}</h3>
         <p className="pkhint" style={{ margin: 0 }}>
-          轉帳只是把錢換個地方放，不算支出，也不算進預算和報表。
+          存到「{to}」。轉帳只是把錢換個地方放，不算支出，也不算進預算。
         </p>
         <div style={{ display: "flex", gap: 8 }}>
           <div className="namefield">
             <label htmlFor="xf-amt">金額</label>
-            <input id="xf-amt" className="num" inputMode="decimal" value={amt} onChange={(e) => setAmt(e.target.value)} />
+            <input id="xf-amt" className="num" inputMode="decimal" placeholder="0" value={amt} onChange={(e) => setAmt(e.target.value)} />
           </div>
           <div className="namefield">
             <label htmlFor="xf-date">日期</label>
             <input id="xf-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <div className="namefield">
-            <label htmlFor="xf-from">從</label>
-            <input id="xf-from" value={from} placeholder="例如：薪轉帳戶" onChange={(e) => setFrom(e.target.value)} />
-          </div>
-          <div className="namefield">
-            <label htmlFor="xf-to">轉到</label>
-            <input id="xf-to" list="xf-accs" value={to} placeholder="儲蓄帳戶" onChange={(e) => setTo(e.target.value)} />
-            <datalist id="xf-accs">
-              {accs.map((a) => (
-                <option key={a} value={a} />
-              ))}
-            </datalist>
-          </div>
-        </div>
         <div className="namefield">
           <label htmlFor="xf-note">備註</label>
           <input id="xf-note" value={note} onChange={(e) => setNote(e.target.value)} />
         </div>
-        <div className="err" role="alert">
-          {err}
-        </div>
+        {err ? (
+          <div className="err" role="alert">
+            {err}
+          </div>
+        ) : null}
         <div className="acts">
           {t0 ? (
             <button className="btn destructive" style={{ marginRight: "auto" }} onClick={del} aria-label="刪除轉帳">

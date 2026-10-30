@@ -19,3 +19,6 @@ body{margin:0}
 .hpi{background:var(--hp-inc)}.hps{background:var(--hp-save)}.hpe{background:var(--hp-exp)}
 .hpleg{display:flex;justify-content:space-between;gap:8px;margin-top:10px;font-size:13px;flex-wrap:wrap}
 .hpleg b{font-weight:600;font-size:14px}
+
+/* 對話框裡的日期欄：iOS 的日期輸入框有固定寬度，會撐出欄位 */
+.namefield input[type=date]{-webkit-appearance:none;appearance:none;display:block;min-width:0;max-width:100%;text-align:left}

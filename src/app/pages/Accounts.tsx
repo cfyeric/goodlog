@@ -268,7 +268,7 @@ export function Accounts({ ledger, onImport }: { ledger: Ledger; onImport: () =>
           </div>
         </div>
       </div>
-      <div className="card elist">
+      <div className="card elist" style={{ marginTop: 12 }}>
         <EntRow name="現金" icon="banknote" v={cashV} n={cashL.length} b={bl.cash} onClick={() => sel("cash")} />
         {tops.length || ctN ? (
           <>
@@ -291,22 +291,22 @@ export function Accounts({ ledger, onImport }: { ledger: Ledger; onImport: () =>
         ) : null}
       </div>
       {(
-        <div className="card elist" style={{ marginTop: 12 }}>
-          <div className="esub" style={{ marginTop: 0 }}>
+        <div className="card elist" style={{ marginTop: 12, padding: "6px 14px 14px" }}>
+          <div className="esub" style={{ paddingBottom: 2 }}>
             儲蓄（轉帳，不算支出）{saveV ? " · 本月存入 " + formatMoney(saveV) : ""}
           </div>
           {(saveAccs.length ? saveAccs : Object.keys(saveBy)).map((a) => (
             <EntRow key={a} name={a} icon="piggy-bank" v={saveBy[a]?.v || 0} n={saveBy[a]?.n || 0} onClick={() => sel("save:" + a)} />
           ))}
           {!saveAccs.length && !xfers.length ? (
-            <p className="pkhint" style={{ margin: "4px 0 0" }}>
+            <p className="pkhint" style={{ margin: "6px 0 0", lineHeight: 1.6 }}>
               把錢轉到儲蓄帳戶時記一筆，不會算進支出，日曆上會多一條「儲蓄」。
             </p>
           ) : null}
           <button
             className="addbtn"
-            style={{ width: "100%", height: 36, marginTop: 8 }}
-            onClick={() => openXfer({ date: ym === today.slice(0, 7) ? today : ym + "-01", toAcc: saveAccs[0] || "" })}
+            style={{ width: "100%", height: 40, marginTop: 12 }}
+            onClick={() => openXfer({ date: ym === today.slice(0, 7) ? today : ym + "-01" })}
           >
             ＋ 記一筆存款
           </button>
