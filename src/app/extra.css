@@ -9,10 +9,10 @@ body{margin:0}
 .mpane.prev{right:calc(100% + 12px)}
 .mpane.next{left:calc(100% + 12px)}
 
-/* 收支血條：彩度比文字用的紅綠藍低 */
-:root{--hp-inc:oklch(.68 .085 160);--hp-save:oklch(.66 .09 258);--hp-exp:oklch(.66 .12 25);--hp-inc-t:oklch(.5 .085 160);--hp-save-t:oklch(.5 .1 258);--hp-exp-t:oklch(.52 .13 25)}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--hp-inc:oklch(.62 .08 160);--hp-save:oklch(.6 .085 258);--hp-exp:oklch(.6 .11 25);--hp-inc-t:oklch(.76 .08 160);--hp-save-t:oklch(.76 .08 258);--hp-exp-t:oklch(.76 .1 25)}}
-:root[data-theme="dark"]{--hp-inc:oklch(.62 .08 160);--hp-save:oklch(.6 .085 258);--hp-exp:oklch(.6 .11 25);--hp-inc-t:oklch(.76 .08 160);--hp-save-t:oklch(.76 .08 258);--hp-exp-t:oklch(.76 .1 25)}
+/* 收支血條：條的顏色固定（使用者指定），淺色模式下方數字用同色系深一點，才讀得清楚 */
+:root{--hp-inc:#96d791;--hp-save:#80c6dd;--hp-exp:#f1718f;--hp-inc-t:#3f8a3a;--hp-save-t:#2f7f9a;--hp-exp-t:#c23d5e}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--hp-inc-t:#96d791;--hp-save-t:#80c6dd;--hp-exp-t:#f1718f}}
+:root[data-theme="dark"]{--hp-inc-t:#96d791;--hp-save-t:#80c6dd;--hp-exp-t:#f1718f}
 .hpbar{display:flex;height:16px;border-radius:999px;overflow:hidden;background:var(--muted-bg)}
 .hpbar i{display:block;height:100%;flex:none}
 .hpbar .hpgap{flex:1 1 0;min-width:0}
