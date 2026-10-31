@@ -471,9 +471,11 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
               <input id="f-time" type="time" value={t.time || ""} onChange={(e) => setT({ time: e.target.value })} />
             </div>
             <div className={"field" + (isSave ? " full" : "")}>
-              <label htmlFor="f-name">名稱</label>
+              <label htmlFor="f-item">名稱</label>
               <input
-                id="f-name"
+                id="f-item"
+                name="gl-item"
+                autoCorrect="off"
                 placeholder="名稱"
                 value={t.name || ""}
                 autoComplete="off"
@@ -482,13 +484,15 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
                   if (u.padTarget) closePad();
                   ui({ sugField: "name" });
                 }}
-                onBlur={() => setTimeout(() => setU((x) => (x.sugField === "name" && document.activeElement?.id !== "f-name" && document.activeElement?.id !== "f-mer" ? { ...x, sugField: null } : x)), 150)}
+                onBlur={() => setTimeout(() => setU((x) => (x.sugField === "name" && document.activeElement?.id !== "f-item" && document.activeElement?.id !== "f-mer" ? { ...x, sugField: null } : x)), 150)}
               />
             </div>
             {isSave ? null : <div className="field">
               <label htmlFor="f-mer">商家</label>
               <input
                 id="f-mer"
+                name="gl-shop"
+                autoCorrect="off"
                 placeholder="商家"
                 value={t.merchant || ""}
                 autoComplete="off"
@@ -497,7 +501,7 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
                   if (u.padTarget) closePad();
                   ui({ sugField: "merchant" });
                 }}
-                onBlur={() => setTimeout(() => setU((x) => (x.sugField === "merchant" && document.activeElement?.id !== "f-name" && document.activeElement?.id !== "f-mer" ? { ...x, sugField: null } : x)), 150)}
+                onBlur={() => setTimeout(() => setU((x) => (x.sugField === "merchant" && document.activeElement?.id !== "f-item" && document.activeElement?.id !== "f-mer" ? { ...x, sugField: null } : x)), 150)}
               />
             </div>}
             {isSave ? null : <SuggestBar

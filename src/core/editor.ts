@@ -3,7 +3,7 @@
  * 跟舊版 legacy/ 的 openEditor、evalExpr、saveTx 等行為相同。
  */
 import type { Category, DateStr, Ledger, Months, Rule, Settings, Tx } from "./types";
-import { pad, pd } from "./dates";
+import { pad, pd, ymd } from "./dates";
 import { allTx, cardOf, findCategory, findGroup, findProject, payOf } from "./ledger";
 import { formatMoney, net, r2 } from "./money";
 import { buildPlan, makeOcc, nOcc, occAt, postBase, recurStart, ruleMode, wdSet, type PlanOptions, type ScheduleMode } from "./recurrence";
@@ -120,9 +120,12 @@ export function newDraft(L: Ledger, tx: Tx | null, opts: { date: DateStr; now: D
       confirmPending: false,
     };
   }
-  const all = allTx(L);
-  const last = latest(all.filter((t) => t.type === "expense"));
-  const lc = latest(all.filter((t) => t.type === "expense" && payOf(s, t) === "card"));
+  // 付款方式、卡片、專案沿用「自己記的最後一筆」：週期／分期自動產生的、還沒入帳的、未來日期的都不算，
+  // 不然每月自動扣款的信用卡記錄會讓預設一直跳到信用卡
+  const today = ymd(opts.now);
+  const all = allTx(L).filter((t) => t.type === "expense" && !t.rec && !t.inst && !t.pending && t.date <= today);
+  const last = latest(all);
+  const lc = latest(all.filter((t) => payOf(s, t) === "card"));
   const lcc = lc && cardOf(s, lc);
   const lp = last && last.projectId && !findProject(s, last.projectId)?.archived ? last.projectId : "";
   return {
