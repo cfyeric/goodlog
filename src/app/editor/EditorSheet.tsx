@@ -474,6 +474,8 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
               <label htmlFor="f-item">名稱</label>
               <input
                 id="f-item"
+                type="search"
+                enterKeyHint="done"
                 name="gl-item"
                 autoCorrect="off"
                 placeholder="名稱"
@@ -491,6 +493,8 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
               <label htmlFor="f-mer">商家</label>
               <input
                 id="f-mer"
+                type="search"
+                enterKeyHint="done"
                 name="gl-shop"
                 autoCorrect="off"
                 placeholder="商家"
@@ -523,7 +527,7 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
             {isSave ? null : schedField}
             {isSave ? null : <div className="field full">
               <label htmlFor="f-inv">發票號碼</label>
-              <input id="f-inv" placeholder="發票號碼" value={t.invoice || ""} onChange={(e) => setT({ invoice: e.target.value })} />
+              <input id="f-inv" type="search" enterKeyHint="done" autoComplete="off" placeholder="發票號碼" value={t.invoice || ""} onChange={(e) => setT({ invoice: e.target.value })} />
             </div>}
             {d.orig && d.orig.rec && !RR ? (
               <p className="pkhint" style={{ gridColumn: "1/-1", margin: 0 }}>
@@ -692,6 +696,9 @@ function TagsInput({ tags, onChange }: { tags: string[]; onChange: (t: string[])
   return (
     <input
       id="f-tags"
+      type="search"
+      enterKeyHint="done"
+      autoComplete="off"
       placeholder="標籤（以空白分隔）"
       value={txt}
       onChange={(e) => {
