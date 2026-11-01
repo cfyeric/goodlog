@@ -69,7 +69,7 @@ function MRow({ item, kind, sub, s, onMain, onEdit, onDel, onHide, onGrip }: { i
 }
 
 /** 拖曳把手排序（滑鼠、觸控都可以）；放開後回傳新的 id 順序 */
-function startDrag(e: RPointerEvent<HTMLSpanElement>, done: (ids: string[]) => void) {
+export function startDrag(e: RPointerEvent<HTMLSpanElement>, done: (ids: string[]) => void) {
   e.preventDefault();
   const h = e.currentTarget;
   document.body.classList.add("nosel");

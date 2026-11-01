@@ -9,7 +9,8 @@ import { useApp } from "../state";
 import { useNav } from "../nav";
 import { useOverlay } from "../editor/context";
 import { Ic, Seal, UiIcon } from "../ui/Icon";
-import { savingAccounts } from "../../core/editor";
+import { reorderArr, savingAccounts } from "../../core/editor";
+import { startDrag } from "./Cats";
 import { BMini, BudgetRow, EntRow, GearBtn, LazyInput, MonthHead, OptRow, RecursCard, SelList, SwitchRow } from "./common";
 
 const PAY_COLOR = { cash: "var(--foreground)", card: "var(--xfer)" };
@@ -358,6 +359,7 @@ function AccSettings({ ledger, k }: { ledger: Ledger; k: string }) {
           <BudgetRow b={s.cardBudget} name="全部信用卡" onChange={(b) => setSettings((st) => ({ ...st, cardBudget: b }))} />
         </div>
         <p className="pkhint">全部信用卡是所有卡片刷卡金額的加總，只能設定預算。</p>
+        <CardOrder s={s} onOrder={(ids) => setSettings((st) => ({ ...st, cards: reorderArr(st.cards || [], ids) }))} />
       </div>
     );
   const c = findCard(s, k);
@@ -536,3 +538,34 @@ function AccSettings({ ledger, k }: { ledger: Ledger; k: string }) {
   );
 }
 
+
+/** 卡片順序：拖曳右邊的把手調整，記一筆時的卡片選單照這個順序 */
+function CardOrder({ s, onOrder }: { s: Settings; onOrder: (ids: string[]) => void }) {
+  const list = (s.cards || []).filter((c) => !c.archived);
+  if (list.length < 2) return null;
+  return (
+    <div style={{ marginTop: 18 }}>
+      <div className="esub" style={{ padding: "0 0 4px" }}>
+        卡片順序
+      </div>
+      <div className="mlist">
+        {list.map((c) => (
+          <div className="mrow" data-id={c.id} key={c.id}>
+            <span className="mmain" style={{ cursor: "default" }}>
+              <span className="mtxt">
+                <b>{c.name}</b>
+                {svParent(s, c) ? <small>悠遊卡</small> : null}
+              </span>
+            </span>
+            <span className="macts">
+              <span className="ib grip" role="button" aria-label={`拖曳排序「${c.name}」`} title="拖曳排序" onPointerDown={(e) => startDrag(e, onOrder)}>
+                <Ic name="menu" />
+              </span>
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="pkhint">拖曳右邊的把手調整順序，記一筆時的卡片選單會照這個順序。封存的卡片不會出現在選單。</p>
+    </div>
+  );
+}
