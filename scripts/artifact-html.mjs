@@ -13,6 +13,8 @@ const dist = path.join(root, "dist");
 let html = fs.readFileSync(path.join(dist, "index.html"), "utf8");
 
 const read = (src) => fs.readFileSync(path.join(dist, src.replace(/^\.\//, "")), "utf8");
+// claude.ai 網頁用不到主畫面圖示，拿掉（檔案沒有一起發佈）
+html = html.replace(/<link rel="(?:icon|apple-touch-icon)"[^>]*>\s*/g, "");
 // 外部字型（Google Fonts）保留原本的 <link>，只內嵌自己打包的 CSS
 html = html.replace(/<link rel="stylesheet"[^>]*href="([^"]+)"[^>]*>/g, (m, href) => (/^https?:/.test(href) ? m : `<style>${read(href)}</style>`));
 html = html.replace(/<script type="module"[^>]*src="([^"]+)"[^>]*><\/script>/g, (_, src) => `<script type="module">${read(src).replace(/<\/script/gi, "<\\/script")}</script>`);
