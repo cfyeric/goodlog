@@ -2,7 +2,7 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 import { ymd } from "../core/dates";
 
-export type View = "home" | "acc" | "proj" | "report" | "settings" | "cats" | "subcats" | "history";
+export type View = "home" | "acc" | "proj" | "report" | "settings" | "cats" | "subcats" | "history" | "cattx";
 export type ReportTab = "overview" | "cat" | "rank" | "acc" | "proj";
 
 export interface Nav {
@@ -35,6 +35,8 @@ export interface Nav {
   /** 類別管理：支出或收入、正在看哪個主類別 */
   catType: "expense" | "income";
   catGroup: string | null;
+  /** 類別管理：正在看哪個子類別的記錄 */
+  catSel: string | null;
 }
 
 const today = ymd(new Date());
@@ -60,6 +62,7 @@ export const initialNav: Nav = {
   armed: null,
   catType: "expense",
   catGroup: null,
+  catSel: null,
 };
 
 interface NavCtx {

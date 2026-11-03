@@ -88,9 +88,11 @@ export function EntRow({ name, icon, v, n, b, extra, onClick }: EntRowProps) {
 }
 
 /** 點進某個帳戶或專案後的明細卡片 */
-export function SelList({ s, title, list, onBack, backLabel, b, totLbl, sum, extra }: { s: Settings; title: string; list: Tx[]; onBack: () => void; backLabel: string; b?: BudgetStatus | null; totLbl?: string; sum?: ReactNode; extra?: ReactNode }) {
+export function SelList({ s, title, list, onBack, backLabel, b, totLbl, sum, extra, page, empty, totColor }: { s: Settings; title: string; list: Tx[]; onBack: () => void; backLabel: string; b?: BudgetStatus | null; totLbl?: string; sum?: ReactNode; extra?: ReactNode; /** 一次顯示幾筆，按「再顯示」繼續（不給就全部顯示） */ page?: number; empty?: string; totColor?: string }) {
   const tot = list.reduce((a, t) => a + (t.type === "topup" ? +t.amount || 0 : net(t)), 0);
-  const sorted = list.slice().sort((a, c) => (c.date + (c.time || "")).localeCompare(a.date + (a.time || "")));
+  const all = list.slice().sort((a, c) => (c.date + (c.time || "")).localeCompare(a.date + (a.time || "")));
+  const [shown, setShown] = useState(page || 0);
+  const sorted = page ? all.slice(0, shown) : all;
   return (
     <div className="card rcard">
       <div className="rdrill">
@@ -105,7 +107,7 @@ export function SelList({ s, title, list, onBack, backLabel, b, totLbl, sum, ext
         <div className="rsum">
           <div>
             <span>{totLbl || "合計"}</span>
-            <b className="num" style={{ color: "var(--exp)" }}>
+            <b className="num" style={{ color: totColor || "var(--exp)" }}>
               {formatMoney(tot)}
             </b>
           </div>
@@ -129,10 +131,15 @@ export function SelList({ s, title, list, onBack, backLabel, b, totLbl, sum, ext
           {sorted.map((t) => (
             <TxRow key={t.id} t={t} s={s} showDate />
           ))}
+          {page && all.length > shown ? (
+            <button className="addbtn" style={{ width: "100%", height: 40, marginTop: 10 }} onClick={() => setShown((n) => n + page)}>
+              再顯示 {Math.min(page, all.length - shown)} 筆（還有 {all.length - shown} 筆）
+            </button>
+          ) : null}
         </div>
       ) : (
         <div className="empty" style={{ border: 0, padding: 16 }}>
-          這個月沒有記錄
+          {empty || "這個月沒有記錄"}
         </div>
       )}
     </div>

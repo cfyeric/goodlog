@@ -12,7 +12,7 @@ import { MozeHost } from "./import/MozeSheet";
 import { SearchHost } from "./search/SearchSheet";
 import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
-import { Cats, Subcats } from "./pages/Cats";
+import { Cats, CatTx, Subcats } from "./pages/Cats";
 import { History } from "./pages/History";
 import { useOverlay } from "./editor/context";
 import { supabaseConfigured } from "../data/supabaseClient";
@@ -82,6 +82,9 @@ function Main() {
       break;
     case "subcats":
       page = <Subcats ledger={ledger} />;
+      break;
+    case "cattx":
+      page = <CatTx ledger={ledger} />;
       break;
     case "history":
       page = <History />;

@@ -1,7 +1,8 @@
 /** 類別管理：主類別、子類別（新增、編輯、刪除、隱藏、拖曳排序） */
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent, type ReactElement } from "react";
 import type { Category, Group, Ledger, Settings } from "../../core/types";
-import { allTx, findGroup } from "../../core/ledger";
+import { allTx, findCategory, findGroup } from "../../core/ledger";
+import { SelList } from "./common";
 import { reorderArr } from "../../core/editor";
 import { uid8 } from "../../core/ids";
 import { useApp } from "../state";
@@ -264,7 +265,7 @@ export function Cats({ ledger }: { ledger: Ledger }) {
 
 export function Subcats({ ledger }: { ledger: Ledger }) {
   const s = ledger.settings;
-  const { nav, view } = useNav();
+  const { nav, go, view } = useNav();
   const A = useCatActions(ledger);
   const g = nav.catGroup ? findGroup(s, nav.catGroup) : undefined;
   useEffect(() => {
@@ -303,7 +304,10 @@ export function Subcats({ ledger }: { ledger: Ledger }) {
                 kind="cat"
                 sub={(used[c.id] || 0) + " 筆記錄"}
                 s={s}
-                onMain={() => A.openPicker("cat", c.id)}
+                onMain={() => {
+                  go({ catSel: c.id });
+                  view("cattx");
+                }}
                 onEdit={() => A.openPicker("cat", c.id)}
                 onDel={() => A.askDelete("cat", c.id)}
                 onHide={() => A.toggleHide("cat", c.id)}
@@ -565,5 +569,32 @@ function PickerSheet({ P, setP, s }: { P: Picker; setP: (p: Picker | null) => vo
         </div>
       </div>
     </div>
+  );
+}
+
+/** 類別管理 → 點子類別：這個子類別的所有記錄（新的在上面） */
+export function CatTx({ ledger }: { ledger: Ledger }) {
+  const s = ledger.settings;
+  const { nav, view } = useNav();
+  const c = nav.catSel ? findCategory(s, nav.catSel) : undefined;
+  useEffect(() => {
+    if (!c) view("subcats");
+  }, [c, view]);
+  useEffect(() => window.scrollTo(0, 0), []);
+  if (!c) return null;
+  const g = findGroup(s, c.groupId);
+  const list = allTx(ledger).filter((t) => t.catId === c.id);
+  return (
+    <SelList
+      s={s}
+      title={(g ? g.name + " › " : "") + c.name}
+      list={list}
+      onBack={() => view("subcats")}
+      backLabel="返回"
+      totLbl={"全部" + (c.type === "income" ? "收入" : "支出")}
+      totColor={c.type === "income" ? "var(--inc)" : "var(--exp)"}
+      page={50}
+      empty="這個子類別還沒有記錄"
+    />
   );
 }
