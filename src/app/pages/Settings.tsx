@@ -1,5 +1,6 @@
 /** 設定頁：商家對照、類別入口、備份與匯出、還原、從 MOZE 匯入 */
 import { useState } from "react";
+import { CHANGELOG } from "../changelog";
 import type { Ledger } from "../../core/types";
 import { findCategory } from "../../core/ledger";
 import { backupJSON, exportCSV, parseBackup, restoreMonths, stamp, type RestorePreview } from "../../core/backup";
@@ -236,6 +237,14 @@ export function Settings({ ledger }: { ledger: Ledger }) {
             </div>
           </div>
         ) : null}
+        <div className="card" style={{ padding: "12px 16px 4px" }}>
+          <div className="lbl-s">關於</div>
+          <button className="navrow" onClick={() => view("history")}>
+            <span>更新紀錄</span>
+            <small>最近更新 {CHANGELOG[0].date.replace(/-/g, "/")}</small>
+            <Ic name="chevron-right" />
+          </button>
+        </div>
         <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 2px" }}>資料存在你的雲端帳本，只有你看得到。</p>
       </div>
     </>

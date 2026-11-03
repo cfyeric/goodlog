@@ -88,7 +88,7 @@ export function TabBar() {
   const { nav, view } = useNav();
   const { ledger } = useApp();
   const { openEditor } = useOverlay();
-  const cur: View = nav.view === "cats" || nav.view === "subcats" ? "settings" : nav.view;
+  const cur: View = nav.view === "cats" || nav.view === "subcats" || nav.view === "history" ? "settings" : nav.view;
   const home = cur === "home";
   const tab = (v: View, label: string, icon: React.ReactNode) => (
     <button className={"tab" + (cur === v ? " on" : "")} aria-current={cur === v ? "page" : "false"} onClick={() => view(v)}>

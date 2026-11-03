@@ -33,3 +33,6 @@ body{margin:0}
 /* 記帳畫面的文字欄位用 type=search（避免 iOS 跳出「自動填寫聯絡人」），外觀維持跟一般輸入框一樣 */
 .field input[type=search]{-webkit-appearance:none;appearance:none}
 .field input[type=search]::-webkit-search-cancel-button,.field input[type=search]::-webkit-search-decoration{-webkit-appearance:none;appearance:none;display:none}
+/* 更新紀錄 */
+.chlog{margin:6px 0 0;padding:0 0 0 18px;display:flex;flex-direction:column;gap:6px;font-size:14px;line-height:1.55}
+.chlog li::marker{color:var(--muted)}

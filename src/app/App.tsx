@@ -13,6 +13,7 @@ import { SearchHost } from "./search/SearchSheet";
 import { Reports } from "./pages/Reports";
 import { Settings } from "./pages/Settings";
 import { Cats, Subcats } from "./pages/Cats";
+import { History } from "./pages/History";
 import { useOverlay } from "./editor/context";
 import { supabaseConfigured } from "../data/supabaseClient";
 import { AuthGate } from "./auth/AuthGate";
@@ -81,6 +82,9 @@ function Main() {
       break;
     case "subcats":
       page = <Subcats ledger={ledger} />;
+      break;
+    case "history":
+      page = <History />;
       break;
   }
   return (
