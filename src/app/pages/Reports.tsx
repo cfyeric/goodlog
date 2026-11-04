@@ -262,7 +262,7 @@ function Overview({ s, tx, saves, showSave }: { s: Settings; tx: Tx[]; saves: Tx
   const gl = Object.entries(groups).sort((a, b) => b[1].v - a[1].v);
   const pctOf = (v: number) => (E ? pct1(v, E) : "0.0");
   const top3 = gl.slice(0, 3);
-  const top = exp.slice().sort((a, b) => net(b) - net(a)).slice(0, 3);
+  const top = exp.slice().sort((a, b) => net(b) - net(a)).slice(0, 20);
   return (
     <div className="stack">
       <div className="card">
@@ -310,7 +310,7 @@ function Overview({ s, tx, saves, showSave }: { s: Settings; tx: Tx[]; saves: Tx
       </div>
       {top.length ? (
         <div className="card" style={{ padding: "12px 12px 4px" }}>
-          <div className="lbl-s">最大三筆支出</div>
+          <div className="lbl-s">最大 20 筆支出</div>
           <div className="list">
             {top.map((t) => (
               <TxRow key={t.id} t={t} s={s} showDate />
