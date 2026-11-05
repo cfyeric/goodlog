@@ -1,5 +1,5 @@
 /** 帳戶頁：現金、信用卡（含悠遊聯名卡）、帳戶設定 */
-import { Fragment } from "react";
+import { Fragment, useMemo } from "react";
 import type { Card, Ledger, Settings } from "../../core/types";
 import { chargeCard, findCard, isSvTx, payOf, svBalance, svChildOf, svParent } from "../../core/ledger";
 import { formatMoney, formatSigned, net } from "../../core/money";
@@ -10,7 +10,7 @@ import { useNav } from "../nav";
 import { useOverlay } from "../editor/context";
 import { Ic, Seal, UiIcon } from "../ui/Icon";
 import { reorderArr, savingAccounts } from "../../core/editor";
-import { startDrag } from "./Cats";
+import { startDrag } from "../ui/drag";
 import { BMini, BudgetRow, EntRow, GearBtn, LazyInput, MonthHead, OptRow, RecursCard, SelList, SwitchRow } from "./common";
 
 const PAY_COLOR = { cash: "var(--foreground)", card: "var(--xfer)" };
@@ -19,6 +19,7 @@ export function Accounts({ ledger, onImport }: { ledger: Ledger; onImport: () =>
   const { today, setSettings, canWrite, toast } = useApp();
   const { nav, go } = useNav();
   const { openTopup } = useOverlay();
+  const saveAccsM = useMemo(() => savingAccounts(ledger.months), [ledger.months]);
   const s = ledger.settings;
   const addCard = () => {
     if (!canWrite()) return;
@@ -79,7 +80,7 @@ export function Accounts({ ledger, onImport }: { ledger: Ledger; onImport: () =>
   const cardUseV = cardUseL.reduce((a, t) => a + net(t), 0);
   // 轉到儲蓄帳戶（轉帳不算支出）：依轉入的帳戶加總
   const xfers = its.filter((t) => t.type === "transfer");
-  const saveAccs = savingAccounts(ledger.months);
+  const saveAccs = saveAccsM;
   const saveBy: Record<string, { v: number; n: number }> = {};
   xfers.forEach((t) => {
     const k = t.toAcc || "儲蓄帳戶";

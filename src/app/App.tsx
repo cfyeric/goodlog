@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { AppProvider, useApp } from "./state";
 import { NavProvider, useNav } from "./nav";
 import { OverlayProvider } from "./editor/context";
@@ -7,17 +8,42 @@ import { Accounts } from "./pages/Accounts";
 import { Projects } from "./pages/Projects";
 import { EditorHost } from "./editor/EditorSheet";
 import { TopupHost } from "./editor/TopupDialog";
-import { ImportHost } from "./import/ImportSheet";
-import { MozeHost } from "./import/MozeSheet";
 import { SearchHost } from "./search/SearchSheet";
-import { Reports } from "./pages/Reports";
 import { Aliases, Settings } from "./pages/Settings";
-import { Cats, CatTx, Subcats } from "./pages/Cats";
-import { History } from "./pages/History";
 import { useOverlay } from "./editor/context";
 import { supabaseConfigured } from "../data/supabaseClient";
 import { AuthGate } from "./auth/AuthGate";
 import type { LedgerStore } from "../data/store";
+
+// 不常用的畫面點進去才下載，打開好記時要載入的程式比較少
+const Reports = lazy(() => import("./pages/Reports").then((m) => ({ default: m.Reports })));
+const History = lazy(() => import("./pages/History").then((m) => ({ default: m.History })));
+const Cats = lazy(() => import("./pages/Cats").then((m) => ({ default: m.Cats })));
+const Subcats = lazy(() => import("./pages/Cats").then((m) => ({ default: m.Subcats })));
+const CatTx = lazy(() => import("./pages/Cats").then((m) => ({ default: m.CatTx })));
+const ImportSheet = lazy(() => import("./import/ImportSheet").then((m) => ({ default: m.ImportSheet })));
+const MozeSheet = lazy(() => import("./import/MozeSheet").then((m) => ({ default: m.MozeSheet })));
+
+function ImportHost() {
+  const { importOpen } = useOverlay();
+  const { ledger } = useApp();
+  if (!importOpen || !ledger) return null;
+  return (
+    <Suspense fallback={null}>
+      <ImportSheet ledger={ledger} />
+    </Suspense>
+  );
+}
+
+function MozeHost() {
+  const { mozeOpen } = useOverlay();
+  if (!mozeOpen) return null;
+  return (
+    <Suspense fallback={null}>
+      <MozeSheet />
+    </Suspense>
+  );
+}
 
 export function App() {
   if (supabaseConfigured) return <AuthGate>{(store) => <Shell store={store} />}</AuthGate>;
@@ -97,7 +123,7 @@ function Main() {
     <div className="app">
       <Banner />
       <RemindBar />
-      {page}
+      <Suspense fallback={<div className="empty">載入中…</div>}>{page}</Suspense>
     </div>
   );
 }

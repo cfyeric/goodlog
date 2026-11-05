@@ -15,14 +15,14 @@ import {
 import { useApp } from "../state";
 import { useNav } from "../nav";
 import { useOverlay, type EditorRequest } from "./context";
-import { Ic, Seal, Svg, UiIcon } from "../ui/Icon";
+import { FOLDER, Ic, Seal, Svg, UiIcon } from "../ui/Icon";
 import { CatGrid } from "./CatGrid";
-import { FOLDER } from "../ui/TxRow";
+import { Keypad, type PadTarget } from "./Keypad";
+import { TagsInput } from "./TagsInput";
 import { SuggestBar } from "./SuggestBar";
 import { DatePicker } from "./DatePicker";
 import { SchedDialog } from "./SchedDialog";
 
-type PadTarget = "amount" | "fee" | "discount";
 
 
 interface UiState {
@@ -378,7 +378,8 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
     )),
   ];
   const dl = dateLabel(t.date, today);
-  const qa = PT === "amount" || u.padClosing === "amount" ? quickAmounts(ledger, t) : [];
+  const qaOn = PT === "amount" || u.padClosing === "amount";
+  const qa = useMemo(() => (qaOn ? quickAmounts(ledger, t) : []), [qaOn, ledger, t.type, t.catId]); // eslint-disable-line react-hooks/exhaustive-deps
   const padShown = !!PT;
   const padKind = PT || u.padClosing;
 
@@ -928,72 +929,6 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
           }}
         />
       ) : null}
-    </div>
-  );
-}
-
-/** 標籤輸入：打字時保留原文，離開欄位才拆成陣列 */
-function TagsInput({ tags, onChange }: { tags: string[]; onChange: (t: string[]) => void }) {
-  const [txt, setTxt] = useState(tags.join(" "));
-  const parse = (v: string) => v.split(/[\s,，]+/).map((x) => x.replace(/^#/, "")).filter(Boolean);
-  return (
-    <input
-      id="f-tags"
-      type="search"
-      enterKeyHint="done"
-      autoComplete="off"
-      placeholder="標籤（以空白分隔）"
-      value={txt}
-      onChange={(e) => {
-        setTxt(e.target.value);
-        onChange(parse(e.target.value));
-      }}
-    />
-  );
-}
-
-const KEYS: [PadKey, string?, string?][] = [
-  ["÷", "op"], ["×", "op"], ["-", "op", "−"], ["+", "op"],
-  ["7"], ["8"], ["9"], ["back", "op", "⌫"],
-  ["4"], ["5"], ["6"], ["C", "op"],
-  ["1"], ["2"], ["3"], ["=", "op"],
-  [".", "", "."], ["0"], ["00"], ["ok", "go", "✓"],
-];
-
-function Keypad({ shown, kind, hint, quick, onQuick, onKey }: { shown: boolean; kind: PadTarget; hint: string; quick: string[]; onQuick: (a: string) => void; onKey: (k: PadKey) => void }) {
-  const [vis, setVis] = useState(false);
-  useEffect(() => {
-    const id = requestAnimationFrame(() => setVis(shown));
-    return () => cancelAnimationFrame(id);
-  }, [shown]);
-  return (
-    <div className={"pad" + (vis && shown ? " show" : "")} role="group" aria-label="數字鍵盤">
-      <div className="padlabel">
-        <span>
-          輸入{{ amount: "金額", fee: "手續費", discount: "折扣" }[kind]}
-          {hint ? (
-            <small className="num" style={{ marginLeft: 6, color: "var(--muted-foreground)" }}>
-              {hint}
-            </small>
-          ) : null}
-        </span>
-      </div>
-      {kind === "amount" && quick.length ? (
-        <div className="quick">
-          {quick.map((a) => (
-            <button key={a} className="num" onClick={() => onQuick(a)}>
-              {a}
-            </button>
-          ))}
-        </div>
-      ) : null}
-      <div className="keys">
-        {KEYS.map(([k, c, l]) => (
-          <button key={k} className={c || ""} data-k={k} aria-label={({ back: "刪除", ok: "完成", C: "清除" } as Record<string, string>)[k] || l || k} onClick={() => onKey(k)}>
-            {l || k}
-          </button>
-        ))}
-      </div>
     </div>
   );
 }

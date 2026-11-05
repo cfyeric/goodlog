@@ -32,6 +32,13 @@ export interface SupaAdapter {
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** 本機副本的內容；revs 是每個月份對應的雲端版本號（舊副本沒有，就整本重新下載） */
+export interface CacheData {
+  settings: Settings;
+  months: Months;
+  revs?: Record<string, number>;
+}
+
 export interface SupaStoreOptions {
   /** 背景檢查其他裝置變更的間隔（毫秒），0 表示不自動檢查 */
   pollMs?: number;
@@ -39,8 +46,8 @@ export interface SupaStoreOptions {
   retries?: number;
   /** 本機副本：打開時先顯示上次的內容，雲端讀完再換成最新的 */
   cache?: {
-    load(): Promise<{ settings: Settings; months: Months } | null>;
-    save(v: { settings: Settings; months: Months }): void;
+    load(): Promise<CacheData | null>;
+    save(v: CacheData): void;
   };
 }
 
@@ -52,6 +59,8 @@ export function createSupabaseStore(db: SupaAdapter, opt: SupaStoreOptions = {})
   const chains: Record<string, Promise<void>> = {};
   /** 還在寫入中的月份（寫完之前不要被背景同步蓋掉） */
   const busy: Record<string, number> = {};
+  /** 本機改過、還沒確定寫進雲端的月份（副本裡不記它們的版本號，下次打開一定重新下載） */
+  const dirty = new Set<string>();
   let settingsRev: number | null = null;
   let mode: StoreMode = "live";
   let snap: LedgerSnapshot = { settings: null, months: {}, monthsReady: false };
@@ -76,7 +85,10 @@ export function createSupabaseStore(db: SupaAdapter, opt: SupaStoreOptions = {})
     if (cacheTimer) clearTimeout(cacheTimer);
     cacheTimer = setTimeout(() => {
       cacheTimer = null;
-      if (snap.settings) opt.cache!.save({ settings: snap.settings, months: snap.months });
+      if (!snap.settings) return;
+      const revs: Record<string, number> = {};
+      for (const k in REV) if (!dirty.has(k) && !busy[k] && snap.months[k]) revs[k] = REV[k];
+      opt.cache!.save({ settings: snap.settings, months: snap.months, revs });
     }, 1500);
   };
   const update = (p: Partial<LedgerSnapshot>) => {
@@ -125,27 +137,26 @@ export function createSupabaseStore(db: SupaAdapter, opt: SupaStoreOptions = {})
       const my = ++gen;
       const alive = () => my === gen && !stopped;
       fresh = false;
-      // 設定和所有月份同時向雲端要，同時先拿本機副本出來顯示
-      const remote = Promise.all([db.getSettings(), db.getMonths()]);
+      // 設定和各月份的版本號向雲端要，同時先拿本機副本出來顯示；
+      // 版本號跟副本一樣的月份直接用副本，只下載有變動的月份
+      const remote = Promise.all([db.getSettings(), db.monthRevs()]);
+      const cacheP: Promise<CacheData | null> = opt.cache ? opt.cache.load().catch(() => null) : Promise.resolve(null);
       let shownCache = false;
-      if (opt.cache)
-        opt.cache.load().then(
-          (c) => {
-            if (!c || !c.settings || fresh || !alive() || snap.settings) return;
-            shownCache = true;
-            const months: Months = {};
-            for (const k in c.months || {}) {
-              const it = Array.isArray(c.months[k]?.items) ? c.months[k].items : [];
-              months[k] = { items: it };
-              BASE[k] = baseOf(it);
-            }
-            // monthsReady 先維持 false：雲端讀完前不補產生週期記錄
-            update({ settings: migrateSettings(clone(c.settings)).settings, months });
-          },
-          () => undefined,
-        );
+      cacheP.then((c) => {
+        if (!c || !c.settings || fresh || !alive() || snap.settings) return;
+        shownCache = true;
+        const months: Months = {};
+        for (const k in c.months || {}) {
+          const it = Array.isArray(c.months[k]?.items) ? c.months[k].items : [];
+          months[k] = { items: it };
+          BASE[k] = baseOf(it);
+        }
+        // monthsReady 先維持 false：雲端讀完前不補產生週期記錄
+        update({ settings: migrateSettings(clone(c.settings)).settings, months });
+      });
       try {
-        const [row, ms] = await remote;
+        const [row, revs] = await remote;
+        const c = await cacheP;
         if (!alive()) return;
         if (row) {
           settingsRev = row.rev;
@@ -158,6 +169,12 @@ export function createSupabaseStore(db: SupaAdapter, opt: SupaStoreOptions = {})
           update({ settings });
           await writeSettingsNow(clone(settings));
         }
+        const cRevs = c && c.revs ? c.revs : null;
+        const cMonths = (c && c.months) || {};
+        const need = Object.keys(revs).filter((k) => !cRevs || cRevs[k] !== revs[k] || !Array.isArray(cMonths[k]?.items));
+        const ms = !need.length ? {} : await db.getMonths(cRevs ? need : undefined);
+        if (!alive()) return;
+        for (const k in revs) if (!ms[k] && cRevs && cRevs[k] === revs[k] && Array.isArray(cMonths[k]?.items)) ms[k] = { value: cMonths[k].items, rev: revs[k] };
         const months: Months = {};
         for (const k in ms) {
           const it = Array.isArray(ms[k].value) ? clone(ms[k].value) : [];
@@ -233,9 +250,11 @@ export function createSupabaseStore(db: SupaAdapter, opt: SupaStoreOptions = {})
       if (!d) return;
       BASE[key] = d.nextBase;
       busy[key] = (busy[key] || 0) + 1;
+      dirty.add(key);
       chains[key] = (chains[key] || Promise.resolve())
         .then(async () => {
           const saved = await writeLoop(key, (cur) => mergeMonth(cur, d.up, d.del));
+          if (busy[key] === 1) dirty.delete(key);
           // 寫完時如果沒有其他待寫的變更，把合併後的結果（含別台裝置的記錄）顯示出來
           if (busy[key] === 1) {
             BASE[key] = baseOf(saved);
@@ -246,6 +265,7 @@ export function createSupabaseStore(db: SupaAdapter, opt: SupaStoreOptions = {})
         .catch(() => fail("儲存失敗，請稍後再試"))
         .finally(() => {
           busy[key]--;
+          saveCache();
         });
     },
     replaceMonth(key: string, items: Tx[]) {
@@ -254,11 +274,15 @@ export function createSupabaseStore(db: SupaAdapter, opt: SupaStoreOptions = {})
       saveCache();
       BASE[key] = baseOf(items);
       busy[key] = (busy[key] || 0) + 1;
+      dirty.add(key);
       const p = (chains[key] || Promise.resolve())
         .then(() => writeLoop(key, () => items.slice()))
-        .then(() => undefined)
+        .then(() => {
+          if (busy[key] === 1) dirty.delete(key);
+        })
         .finally(() => {
           busy[key]--;
+          saveCache();
         });
       chains[key] = p.catch(() => undefined);
       return p;

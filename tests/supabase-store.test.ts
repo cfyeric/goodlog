@@ -211,4 +211,52 @@ describe("Supabase 資料存取", () => {
     expect(s.mode).toBe("offline");
     expect(errs[0]).toContain("上次的資料");
   });
+
+  it("本機副本有版本號：只下載版本變了的月份，沒變的用副本", async () => {
+    const g = fakeDb();
+    const settings = (await open(g.db)).snap.settings!;
+    const f = fakeDb();
+    f.st.settings = { value: settings, rev: 1 };
+    f.st.months["2026-09"] = { value: [tx({ id: "sep" })], rev: 2 };
+    f.st.months["2026-10"] = { value: [tx({ id: "oct-new" })], rev: 5 };
+    const asked: (string[] | undefined)[] = [];
+    const spy: SupaAdapter = { ...f.db, getMonths: (y) => (asked.push(y), f.db.getMonths(y)) };
+    const cache = { settings, months: { "2026-09": { items: [tx({ id: "sep" })] }, "2026-10": { items: [tx({ id: "oct-old" })] } }, revs: { "2026-09": 2, "2026-10": 4 } };
+    let last: LedgerSnapshot | null = null;
+    const s = createSupabaseStore(spy, { pollMs: 0, cache: { load: async () => cache, save: () => {} } });
+    await s.start((n) => (last = n));
+    expect(asked).toEqual([["2026-10"]]);
+    expect(ids(last!.months["2026-09"].items)).toEqual(["sep"]);
+    expect(ids(last!.months["2026-10"].items)).toEqual(["oct-new"]);
+    // 沒變的月份照樣可以寫入（版本號是對的）
+    s.writeMonth("2026-09", [tx({ id: "sep" }), tx({ id: "x" })]);
+    await wait();
+    expect(ids(f.st.months["2026-09"].value)).toEqual(["sep", "x"]);
+    expect(f.st.months["2026-09"].rev).toBe(3);
+  });
+
+  it("寫入失敗的月份，副本不記版本號（下次打開一定重新下載）", { timeout: 8000 }, async () => {
+    const f = fakeDb();
+    f.st.months["2026-11"] = { value: [], rev: 1 };
+    const saved: { revs?: Record<string, number> }[] = [];
+    const s = createSupabaseStore({ ...f.db, updateMonth: async () => null }, { pollMs: 0, retries: 1, cache: { load: async () => null, save: (v) => saved.push(v) } });
+    await s.start(() => {});
+    s.writeMonth("2026-11", [tx({ id: "a" })]);
+    await wait(2600);
+    expect(saved.length).toBeGreaterThan(0);
+    expect(saved[saved.length - 1].revs?.["2026-11"]).toBeUndefined();
+  });
+
+  it("舊的副本沒有版本號：整本重新下載", async () => {
+    const g = fakeDb();
+    const settings = (await open(g.db)).snap.settings!;
+    const f = fakeDb();
+    f.st.settings = { value: settings, rev: 1 };
+    f.st.months["2026-10"] = { value: [tx({ id: "a" })], rev: 1 };
+    const asked: (string[] | undefined)[] = [];
+    const s = createSupabaseStore({ ...f.db, getMonths: (y) => (asked.push(y), f.db.getMonths(y)) }, { pollMs: 0, cache: { load: async () => ({ settings, months: {} }), save: () => {} } });
+    await s.start(() => {});
+    expect(asked).toEqual([undefined]);
+  });
 });
+

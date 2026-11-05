@@ -10,12 +10,8 @@ import { Ic, UiIcon } from "../ui/Icon";
 
 const n = (x: number) => Number(x).toLocaleString("zh-TW");
 
-export function MozeHost() {
-  const { mozeOpen } = useOverlay();
-  return mozeOpen ? <MozeSheet /> : null;
-}
 
-function MozeSheet() {
+export function MozeSheet() {
   const { ledger, commit, canWrite, toast } = useApp();
   const { setMozeOpen } = useOverlay();
   const [opt, setOpt] = useState<MozeOptions>({ optReward: true, optRecv: false });

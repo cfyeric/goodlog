@@ -1,5 +1,5 @@
 /** 信用卡帳單比對：上傳網銀下載的帳單，跟帳本的刷卡記錄配對 */
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Ledger, Tx } from "../../core/types";
 import { cardOf, findCard, findCategory, makeTopup } from "../../core/ledger";
 import { formatMoney, net, r2 } from "../../core/money";
@@ -7,68 +7,13 @@ import { addDays } from "../../core/dates";
 import { uid8 } from "../../core/ids";
 import { findAlias, learnAlias } from "../../core/alias";
 import {
-  buildItems, decodeText, findCloseDate, guessHeader, guessMap, initSecMap, linkCandidates, markNext, matchStatement, mergeGroup, parseCSV,
+  buildItems, findCloseDate, guessHeader, guessMap, initSecMap, linkCandidates, markNext, matchStatement, mergeGroup,
   reconcile, stmtKey, type ColumnMap, type MatchInput, type MatchRow, type StatementItem,
 } from "../../core/statement";
 import { useApp } from "../state";
 import { useOverlay } from "../editor/context";
 import { Ic, UiIcon } from "../ui/Icon";
-
-const XLSX_URL = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
-
-declare global {
-  interface Window {
-    XLSX?: {
-      read(buf: ArrayBuffer, o: object): { SheetNames: string[]; Sheets: Record<string, unknown> };
-      utils: { sheet_to_json(sh: unknown, o: object): unknown[][] };
-    };
-  }
-}
-
-export function loadScript(src: string): Promise<void> {
-  return new Promise((ok, no) => {
-    const sc = document.createElement("script");
-    sc.src = src;
-    sc.onload = () => ok();
-    sc.onerror = () => no(new Error("load"));
-    document.head.appendChild(sc);
-  });
-}
-
-/** 讀檔成表格列：Excel 用 SheetJS、網頁檔讀 <table>、其餘當 CSV */
-async function readRows(file: File): Promise<string[][]> {
-  const buf = await file.arrayBuffer();
-  if (/\.(xlsx|xls)$/i.test(file.name)) {
-    if (!window.XLSX) {
-      try {
-        await loadScript(XLSX_URL);
-      } catch {
-        throw new Error("Excel 讀取元件載入失敗，請改用 CSV 檔，或稍後再試。");
-      }
-    }
-    const wb = window.XLSX!.read(buf, { type: "array", cellDates: false, raw: false });
-    let rows: string[][] = [];
-    wb.SheetNames.forEach((n) => {
-      rows = rows.concat(
-        window.XLSX!.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, defval: "" })
-          .map((r) => (r as unknown[]).map((c) => String(c).trim()))
-          .filter((r) => r.some((c) => c)),
-      );
-    });
-    return rows;
-  }
-  if (/\.html?$/i.test(file.name) || /^\s*<(!doctype|html|table|meta)/i.test(decodeText(buf.slice(0, 400)))) {
-    const doc = new DOMParser().parseFromString(decodeText(buf), "text/html");
-    const rows: string[][] = [];
-    doc.querySelectorAll("tr").forEach((tr) => {
-      const r = [...tr.children].filter((c) => /^T[DH]$/.test(c.tagName)).map((c) => (c.textContent || "").replace(/\s+/g, " ").trim());
-      if (r.some(Boolean)) rows.push(r);
-    });
-    if (!rows.length) throw new Error("這個網頁檔裡沒有找到表格。");
-    return rows;
-  }
-  return parseCSV(decodeText(buf));
-}
+import { readRows } from "./readRows";
 
 interface Imp {
   cardId: string;
@@ -94,14 +39,8 @@ interface Imp {
   rej: Set<number>;
 }
 
-export function ImportHost() {
-  const { importOpen } = useOverlay();
-  const { ledger } = useApp();
-  if (!importOpen || !ledger) return null;
-  return <ImportSheet ledger={ledger} />;
-}
 
-function ImportSheet({ ledger }: { ledger: Ledger }) {
+export function ImportSheet({ ledger }: { ledger: Ledger }) {
   const { today, mode, setSettings, commit, canWrite, toast } = useApp();
   const { setImportOpen, openEditor } = useOverlay();
   const s = ledger.settings;
@@ -151,9 +90,13 @@ function ImportSheet({ ledger }: { ledger: Ledger }) {
     }
   };
 
-  const key = I2.items.length ? stmtKey(I2.cardId, I2.items) : "";
-  const mi: MatchInput = { items: I2.items, cardId: I2.cardId, secMap: I2.secMap, rejected: I2.rej, accepted: I2.acc, key, links: I2.links, noCombo: I2.noCombo };
-  const m = I2.items.length ? matchStatement(ledger, mi) : null;
+  const key = useMemo(() => (I2.items.length ? stmtKey(I2.cardId, I2.items) : ""), [I2.items, I2.cardId]);
+  const mi: MatchInput = useMemo(
+    () => ({ items: I2.items, cardId: I2.cardId, secMap: I2.secMap, rejected: I2.rej, accepted: I2.acc, key, links: I2.links, noCombo: I2.noCombo }),
+    [I2.items, I2.cardId, I2.secMap, I2.rej, I2.acc, key, I2.links, I2.noCombo],
+  );
+  // 只在帳單、帳本或比對選項改變時重新比對（勾選手動對應的項目時不用重算）
+  const m = useMemo(() => (mi.items.length ? matchStatement(ledger, mi) : null), [ledger, mi]);
   const md = (d: string) => +d.slice(5, 7) + "/" + +d.slice(8, 10);
   const headers = (I2.rows?.[I2.headerIdx] || []).map((h, i) => h || "第 " + (i + 1) + " 欄");
   const cards = s.cards || [];
@@ -238,7 +181,7 @@ function ImportSheet({ ledger }: { ledger: Ledger }) {
     setImportOpen(false);
     toast(r.n ? `已記下對帳（${r.n} 筆記錄）` : "已對上的記錄之前就記過了");
   };
-  const allLedgerTx = Object.values(ledger.months).flatMap((x) => x.items || []);
+  const allLedgerTx = useMemo(() => Object.values(ledger.months).flatMap((x) => x.items || []), [ledger.months]);
   const linkPicker = () => {
     const i = I2.pick!;
     const it = I2.items[i];

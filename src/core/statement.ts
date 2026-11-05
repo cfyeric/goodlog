@@ -8,6 +8,7 @@ import { dayDiff, pad, pd } from "./dates";
 import { allTx, chargeCard } from "./ledger";
 import { net } from "./money";
 import { findAlias } from "./alias";
+import { hash53 } from "./moze";
 
 /* ---------- 讀檔 ---------- */
 
@@ -283,6 +284,21 @@ export function initSecMap(s: Settings, secs: string[], cardId: string, prev: Re
 
 /* ---------- 比對 ---------- */
 
+/**
+ * 記錄的對帳記號 rc 是不是這份帳單的；是的話回傳第幾行，不是回傳 -1。
+ * 新格式「起日~迄日@內容雜湊#行」；早期格式「卡片:起日~迄日#行」（跟匯入時選的卡片有關），
+ * 早期格式只要日期範圍相同就算同一份。
+ */
+export function rcLine(rc: string | undefined, key: string): number {
+  if (!rc || !key || rc === "next") return -1;
+  const h = rc.lastIndexOf("#");
+  if (h < 0) return -1;
+  const head = rc.slice(0, h);
+  const range = key.split("@")[0];
+  if (head === key || (head.includes(":") && head.slice(head.indexOf(":") + 1) === range)) return +rc.slice(h + 1);
+  return -1;
+}
+
 export interface MatchInput {
   items: StatementItem[];
   /** 整份帳單對應的卡片；"" 表示所有信用卡 */
@@ -358,7 +374,7 @@ export function matchStatement(l: Ledger, inp: MatchInput): MatchResult | null {
   // 這份帳單已對過的（rc 是這份帳單的某一行）、標成下期入帳的，不受日期範圍限制；
   // 已經對上別份帳單的，不再拿來比
   const linked = new Set(Object.values(inp.links || {}).flat());
-  const mine = (t: Tx) => !!key && !!t.rc && t.rc.startsWith(key + "#");
+  const mine = (t: Tx) => rcLine(t.rc, key) >= 0;
   const txs = allTx(l).filter((t) => {
     const pc = chargeCard(s, t);
     if (!pc || !(anyAll || !pc.id || cids.has(pc.id))) return false;
@@ -380,7 +396,7 @@ export function matchStatement(l: Ledger, inp: MatchInput): MatchResult | null {
   // 0. 之前已對帳、或使用者手動對應的
   if (key)
     for (const r of res) {
-      const list = txs.filter((t) => t.rc === key + "#" + r.i);
+      const list = txs.filter((t) => rcLine(t.rc, key) === r.i);
       if (list.length) {
         setTxs(r, list, "rc");
         r.kind = "ok";
@@ -508,9 +524,10 @@ function subsetSum(list: Tx[], target: number, min: number, max: number): Tx[] |
 }
 
 /** 一份帳單的代號：卡片和明細的日期範圍（同一份檔案重新匯入會得到一樣的代號） */
-export function stmtKey(cardId: string, items: StatementItem[]): string {
+export function stmtKey(_cardId: string, items: StatementItem[]): string {
   const ds = items.map((x) => x.date).sort();
-  return (cardId || "*") + ":" + ds[0] + "~" + ds[ds.length - 1];
+  const body = items.map((x) => x.date + "|" + x.amount + "|" + (x.desc || "")).join("\n");
+  return ds[0] + "~" + ds[ds.length - 1] + "@" + hash53(body);
 }
 
 /** 改幾筆記錄的欄位，回傳有變動的月份 */
@@ -529,7 +546,7 @@ export function reconcile(l: Ledger, key: string, res: MatchRow[]): { months: Re
   const want: Record<string, string> = {};
   for (const r of res) {
     if (r.kind !== "ok" || !r.tx) continue;
-    for (const t of r.txs || [r.tx]) if (t.rc !== key + "#" + r.i) want[t.id] = key + "#" + r.i;
+    for (const t of r.txs || [r.tx]) if (t.rc !== key + "#" + r.i) want[t.id] = key + "#" + r.i; // 早期格式也順便換成新的
   }
   const n = Object.keys(want).length;
   return { months: n ? patchTxs(l, new Set(Object.keys(want)), (t) => ({ ...t, rc: want[t.id] })) : {}, n };
@@ -570,7 +587,7 @@ export function linkCandidates(l: Ledger, inp: MatchInput, m: MatchResult, i: nu
       const pc = chargeCard(s, t);
       if (!pc || used.has(t.id)) return false;
       if (cid && pc.id && pc.id !== cid) return false;
-      if (t.rc && t.rc !== "next" && !(key && t.rc.startsWith(key + "#"))) return false;
+      if (t.rc && t.rc !== "next" && rcLine(t.rc, key) < 0) return false;
       return Math.abs(dayDiff(t.date, it.date)) <= 30;
     })
     .sort((a, b) => Math.abs(dayDiff(a.date, it.date)) - Math.abs(dayDiff(b.date, it.date)) || Math.abs(net(a) - it.amount) - Math.abs(net(b) - it.amount));

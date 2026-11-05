@@ -3,7 +3,10 @@
  * 網址和 publishable key 來自建置設定（.env.web）。這兩個值本來就會出現在網頁裡，
  * 資料靠資料庫的 Row Level Security 保護：只有登入的本人讀得到自己的帳本。
  */
-import { createClient, type Session, type SupabaseClient } from "@supabase/supabase-js";
+// 只用登入（auth-js）和資料表（postgrest-js）兩個模組，不打包整個 supabase-js（裡面的即時連線、檔案儲存等用不到）。
+// 設定方式跟 supabase-js 的 createClient 一樣：同一個 storageKey，所以已經登入的人不用重新登入。
+import { GoTrueClient, type Session } from "@supabase/auth-js";
+import { PostgrestClient } from "@supabase/postgrest-js";
 import type { Settings, Tx } from "../core/types";
 import type { Row, SupaAdapter } from "./supabaseStore";
 
@@ -13,42 +16,68 @@ const KEY = import.meta.env.VITE_SUPABASE_KEY as string | undefined;
 /** 這次建置有沒有設定 Supabase（沒有就照舊：claude.ai 雲端或範例資料） */
 export const supabaseConfigured = !!(URL_ && KEY);
 
-let client: SupabaseClient | null = null;
-export function supa(): SupabaseClient {
-  if (!client) client = createClient(URL_!, KEY!, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storageKey: "goodlog-auth" } });
-  return client;
+const base = () => URL_!.replace(/\/+$/, "") + "/";
+
+let authC: GoTrueClient | null = null;
+function auth(): GoTrueClient {
+  if (!authC)
+    authC = new GoTrueClient({
+      url: new URL("auth/v1", base()).href,
+      headers: { Authorization: `Bearer ${KEY}`, apikey: KEY! },
+      storageKey: "goodlog-auth",
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      flowType: "implicit",
+    });
+  return authC;
+}
+
+/** 資料表的請求：帶上 apikey，以及登入者的 token（沒登入就用 apikey），跟 supabase-js 一樣 */
+const authedFetch: typeof fetch = async (input, init) => {
+  const { data } = await auth().getSession();
+  const h = new Headers(init?.headers);
+  if (!h.has("apikey")) h.set("apikey", KEY!);
+  if (!h.has("Authorization")) h.set("Authorization", `Bearer ${data.session?.access_token ?? KEY}`);
+  return fetch(input, { ...init, headers: h });
+};
+
+let restC: PostgrestClient | null = null;
+function rest(): PostgrestClient {
+  if (!restC) restC = new PostgrestClient(new URL("rest/v1", base()).href, { fetch: authedFetch });
+  return restC;
 }
 
 /** 目前登入的帳號（設定頁顯示用） */
 export async function currentSession(): Promise<Session | null> {
-  const { data } = await supa().auth.getSession();
+  const { data } = await auth().getSession();
   return data.session;
 }
 
 export function onSessionChange(cb: (s: Session | null) => void): () => void {
-  const { data } = supa().auth.onAuthStateChange((_e, s) => cb(s));
+  const { data } = auth().onAuthStateChange((_e, s) => cb(s));
   return () => data.subscription.unsubscribe();
 }
 
 /** 寄登入碼到信箱。新信箱會自動建立帳號（之後可以在 Supabase 後台關掉註冊） */
 export async function sendCode(email: string): Promise<string | null> {
-  const { error } = await supa().auth.signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: location.origin + location.pathname } });
+  const { error } = await auth().signInWithOtp({ email, options: { shouldCreateUser: true, emailRedirectTo: location.origin + location.pathname } });
   return error ? errText(error.message, error.status) : null;
 }
 
 export async function verifyCode(email: string, token: string): Promise<string | null> {
-  const { error } = await supa().auth.verifyOtp({ email, token, type: "email" });
+  const { error } = await auth().verifyOtp({ email, token, type: "email" });
   return error ? errText(error.message, error.status) : null;
 }
 
 /** 用 Google 帳號登入：跳到 Google 選帳號，完成後回到好記 */
 export async function signInGoogle(): Promise<string | null> {
-  const { error } = await supa().auth.signInWithOAuth({ provider: "google", options: { redirectTo: location.origin + location.pathname } });
+  const { error } = await auth().signInWithOAuth({ provider: "google", options: { redirectTo: location.origin + location.pathname } });
   return error ? errText(error.message, error.status) : null;
 }
 
 export async function signOut(): Promise<void> {
-  await supa().auth.signOut();
+  await auth().signOut();
 }
 
 function errText(msg: string, status?: number): string {
@@ -63,7 +92,7 @@ function errText(msg: string, status?: number): string {
 const isConflict = (e: { code?: string } | null) => !!e && e.code === "23505";
 
 export function supabaseAdapter(uid: string): SupaAdapter {
-  const sb = supa();
+  const sb = rest();
   const S = () => sb.from("ledger_settings");
   const M = () => sb.from("ledger_months");
   const must = <T>(r: { data: T; error: { message: string; code?: string } | null }): T => {

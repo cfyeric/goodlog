@@ -1,7 +1,7 @@
 # 好記（GoodLog）
 
-個人記帳網頁，功能參考 MOZE。正在從舊版單檔 HTML（`legacy/goodlog-legacy.html`）改寫成 Vite + React + TypeScript。
-正式版目前仍是舊版，發佈在 claude.ai 的網頁上，資料存在 claude.ai 提供給網頁的雲端資料庫。
+個人記帳網頁，功能參考 MOZE。由舊版單檔 HTML（`legacy/goodlog-legacy.html`）改寫成 Vite + React + TypeScript。
+正式版：https://cfyeric.github.io/goodlog/ （GitHub Pages，資料存在 Supabase）。舊版 claude.ai 網頁（https://claude.ai/artifact/9tyWbyLWo9iohnp4LCq9S6）已停用，不要動它。
 
 ## 溝通
 
@@ -16,7 +16,9 @@ npm install
 npm run dev        # 本機開發，使用範例資料（不會連到真實帳本）
 npm test           # 單元測試 + 新舊版比對
 npm run typecheck
-npm run build      # 輸出到 dist/
+npm run build      # 輸出到 dist/（claude.ai 測試版用，全部包成一個檔）
+npm run build:web  # 正式版（Supabase），不常用的畫面拆成另外的檔案
+npm run dev:web    # 本機開發 Supabase 版（這個環境連不到 supabase.co）
 ```
 
 ## 架構
@@ -42,13 +44,17 @@ src/data/     資料存取
   claudeStore.ts  claude.ai 雲端資料庫（window.claude.use("db")）
   demoStore.ts    本機範例資料
   merge.ts        多裝置同時寫入同一個月的合併邏輯
-  supabaseStore.ts Supabase 版的讀寫（版本號 rev 防止多裝置互相覆蓋）；supabaseClient.ts 連線與登入
+  supabaseStore.ts Supabase 版的讀寫（版本號 rev 防止多裝置互相覆蓋）
+  supabaseClient.ts 連線與登入（只用 @supabase/auth-js 和 postgrest-js，不用整包 supabase-js）
+  localCache.ts   IndexedDB 本機副本
 src/app/      React 畫面
   state.tsx       帳本狀態與寫入（AppProvider）；nav.tsx 目前在哪一頁
   shell/          頁首提醒、底部選單、提示訊息
   pages/          首頁、帳戶、專案、報表、設定、類別管理
-  editor/         記帳畫面、日期、排程、加值對話框
-  import/         信用卡帳單比對、MOZE 匯入
+  editor/         記帳畫面（EditorSheet）、數字鍵盤（Keypad）、標籤（TagsInput）、日期、排程、加值對話框
+  import/         信用卡帳單比對（ImportSheet、readRows 讀檔）、MOZE 匯入
+  ui/             圖示（Icon，含多類別資料夾圖示）、記錄列（TxRow、GroupRow）、拖曳排序（drag）、載入外部程式（loadScript）
+  changelog.ts    設定 → 更新紀錄的內容
   legacy.css      直接沿用舊版的樣式（class 名稱跟舊版相同）
 legacy/       舊版完整原始碼，是所有行為的標準答案
 scripts/legacy-snapshot.mjs  用舊版算出結果，給新舊版比對測試用
@@ -74,9 +80,9 @@ fixtures/     比對用資料；fixtures/private/ 是真實帳本，已在 .giti
 - **service_role / secret key 絕對不要放進專案或網頁。**
 - 資料表與權限：`supabase/schema.sql`（使用者在 Supabase 後台的 SQL Editor 執行）。格式跟 claude.ai 版一樣：`ledger_settings.data` = 設定，`ledger_months.items` = 每月記錄。每列只有本人讀寫得到（RLS）。
 - 登入：Google 帳號（主要），或信箱登入連結（備用）。Supabase 內建寄信不能改信件範本（要自己的 SMTP 才能改），所以信裡只有連結、沒有數字碼。
-- 打開時先顯示 IndexedDB 裡的本機副本（`src/data/localCache.ts`，每個帳號一份，登出時刪除），同時向雲端讀設定和所有月份，讀完再換成最新的；副本顯示期間不補產生週期記錄（monthsReady 為 false）。
+- 打開時先顯示 IndexedDB 裡的本機副本（`src/data/localCache.ts`，每個帳號一份，登出時刪除），同時向雲端讀設定和各月份的版本號；副本裡版本號一樣的月份直接用副本，只下載有變動的月份（舊副本沒有版本號就整本下載）。本機改過還沒確定寫進雲端的月份（dirty）不記版本號，下次一定重新下載。副本顯示期間不補產生週期記錄（monthsReady 為 false）。
+- 測試用 `tests/supabase-store.test.ts`；要測登入和網路請求，在瀏覽器裡攔截 `*.supabase.co` 的請求模擬回應（localStorage 的 `goodlog-auth` 放 session 就是已登入）。
 - 從 claude.ai 搬資料：舊版「完整備份」下載 JSON → 新版「從備份檔還原」。
-- 這個開發環境連不到 supabase.co，測試用 `tests/supabase-store.test.ts`（記憶體版資料庫）和瀏覽器模擬回應。
 
 ## 新舊版比對測試
 
@@ -89,15 +95,11 @@ fixtures/     比對用資料；fixtures/private/ 是真實帳本，已在 .giti
 
 ## 發佈
 
-正式網址是 claude.ai 上的網頁。發佈不在這個專案裡做：
-
-1. 在這裡改好、測好，push 到 GitHub（`cfyeric/goodlog`）。
-2. 到 claude.ai 跟 Claude 說「從 GitHub 更新」，由那邊 pull、build、測試後發佈到原本的網址。
-3. 新版還沒完成前，claude.ai 上繼續用 `legacy/` 的舊版。新版要先發佈到另一個測試網址，使用者在手機試用沒問題才換。
-
-- 測試網址：https://claude.ai/artifact/5ZSvAJCpfiehvWoWQq13mu（「好記 測試版」，目前沒有宣告資料庫權限，只會顯示範例資料）。
-- 發佈用的檔案：`npm run build:artifact` → `dist-artifact/index.html`（JS、CSS 內嵌成單一檔案，去掉 claude.ai 會自動加上的外層標籤）。
-- 注意：claude.ai 每個網頁有自己的資料庫。測試網址就算開了資料庫權限，也是另一個空的帳本，看不到正式帳本的資料。
+- 正式版：push 到 `main` 後，GitHub Actions（`.github/workflows/pages.yml`）會跑測試、`npm run build:web`，通過才發佈到 GitHub Pages。
+- 大改動先開分支，`npm run build:artifact` 發佈到測試網址讓使用者用手機試，確認後再合併到 main；小改動可以直接改 main。推到 main 之前要使用者同意。
+- 測試網址：https://claude.ai/artifact/5ZSvAJCpfiehvWoWQq13mu（「好記 測試版」，只有範例資料，連不到 Supabase）。發佈前把 `dist-artifact/index.html` 的 `<title>` 改成「好記 測試版」。
+- `build:artifact` 會把 JS、CSS 內嵌成單一檔案（`vite.config.ts` 在非 web 模式用 inlineDynamicImports，不拆檔）。
+- 合併完的分支，遠端分支這個環境刪不掉，請使用者到 GitHub 的 branches 頁面刪。
 
 `vite.config.ts` 的 `base: "./"` 是為了讓打包後用相對路徑引用檔案，不要改。
 
@@ -105,7 +107,7 @@ fixtures/     比對用資料；fixtures/private/ 是真實帳本，已在 .giti
 
 第一階段（已完成）：專案架構、核心邏輯模組、資料層、新舊版比對測試。
 
-第二階段（畫面，一頁一頁做，每頁都要跟舊版對照）：以下都已完成，並在手機寬度、淺色／深色下跟舊版截圖逐像素比對過。下一步是使用者在測試網址試用。
+第二階段（畫面，一頁一頁做，每頁都要跟舊版對照）：以下都已完成，並在手機寬度、淺色／深色下跟舊版截圖逐像素比對過。之後的新功能記在 `src/app/changelog.ts`。
 
 1. 日曆首頁：月曆、本月收支、預算提醒卡片（左右滑動）、待入帳、當日記錄、頁首到期提醒列
 2. 記帳畫面：支出／收入、數字鍵盤與算式、手續費與折扣、類別（主類別＋子類別、拖曳排序）、付款方式與卡片、專案、名稱與商家建議（兩邊連動）、日期時間、標籤、備註、排程（週期／分期／單次、立即／延後／提醒入帳）、編輯週期記錄的範圍（只改這筆／這筆和之後／全部）、刪除、確認入帳
