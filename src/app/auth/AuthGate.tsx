@@ -1,6 +1,6 @@
 /** Supabase 版的登入畫面：Google 帳號，或輸入信箱 → 點信裡的登入連結（Supabase 內建寄信不能改範本，信裡只有連結） */
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Session } from "@supabase/supabase-js";
+import type { Session } from "@supabase/auth-js";
 import type { LedgerStore } from "../../data/store";
 import { createSupabaseStore } from "../../data/supabaseStore";
 import { currentSession, onSessionChange, sendCode, signInGoogle, signOut, supabaseAdapter } from "../../data/supabaseClient";

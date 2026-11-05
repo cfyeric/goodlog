@@ -7,6 +7,8 @@ import type { Months, Settings } from "../core/types";
 export interface CachedLedger {
   settings: Settings;
   months: Months;
+  /** 每個月份對應的雲端版本號；跟雲端一樣的月份打開時不用重新下載 */
+  revs?: Record<string, number>;
   /** 存下的時間（毫秒） */
   at: number;
 }

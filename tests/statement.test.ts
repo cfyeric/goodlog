@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildItems, findCloseDate, guessHeader, guessMap, initSecMap, markNext, matchStatement, mergeGroup, parseAmountCell, parseCSV, parseDateCell, reconcile, stmtKey } from "../src/core/statement";
+import { buildItems, findCloseDate, guessHeader, guessMap, initSecMap, markNext, matchStatement, mergeGroup, parseAmountCell, parseCSV, parseDateCell, rcLine, reconcile, stmtKey } from "../src/core/statement";
 import { aliasKey, findAlias, learnAlias } from "../src/core/alias";
 import { CARDS, ledger, settings, tx } from "./helpers";
 
@@ -182,5 +182,22 @@ describe("帳單比對：多筆、手動對應、已對帳、下期入帳", () =
     const oct = [it0("2026-10-01", 50), it0("2026-10-15", 90)];
     const m2 = matchStatement(l2, { ...base, items: oct, key: stmtKey("C", oct), links: { 1: ["a"] } })!;
     expect(m2.res[1].tx?.id).toBe("a");
+  });
+});
+
+describe("對帳代號跟匯入時選的卡片無關", () => {
+  const C = (p: Partial<Parameters<typeof tx>[0]>) => tx({ pay: "card", cardId: "C", ...p });
+  const it0 = (date: string, amount: number, desc = "X") => ({ date, desc, amount, sec: "" });
+  const items = [it0("2026-08-10", 300), it0("2026-08-20", 20)];
+  it("選國泰卡或所有信用卡，代號一樣；內容不同代號不同", () => {
+    expect(stmtKey("C", items)).toBe(stmtKey("", items));
+    expect(stmtKey("C", items)).not.toBe(stmtKey("C", [it0("2026-08-10", 301), it0("2026-08-20", 20)]));
+  });
+  it("早期格式（卡片:日期範圍#行）仍然認得", () => {
+    const l = ledger([C({ id: "a", date: "2026-08-10", amount: 300, rc: "C:2026-08-10~2026-08-20#0" })], { cards: CARDS });
+    const m = matchStatement(l, { cardId: "", rejected: new Set(), accepted: new Set(), items, key: stmtKey("", items) })!;
+    expect([m.res[0].via, m.res[0].tx?.id]).toEqual(["rc", "a"]);
+    expect(rcLine("*:2026-08-10~2026-08-20#1", stmtKey("C", items))).toBe(1);
+    expect(rcLine("C:2026-08-01~2026-08-20#1", stmtKey("C", items))).toBe(-1);
   });
 });

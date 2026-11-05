@@ -1,4 +1,5 @@
 /** 報表頁：總覽、類別（圓餅、下鑽）、排行、帳戶、專案 */
+import { useMemo } from "react";
 import type { Group, Ledger, Settings, Tx } from "../../core/types";
 import { allTx, cardOf, findCategory, findGroup, findProject, payOf } from "../../core/ledger";
 import { formatMoney, net } from "../../core/money";
@@ -192,7 +193,7 @@ export function Reports({ ledger }: { ledger: Ledger }) {
   const { nav, go } = useNav();
   const s = ledger.settings;
   const r = reportRange(nav.rMode, nav.rAnchor);
-  const all = allTx(ledger).filter((t) => t.date >= r.s && t.date <= r.e);
+  const all = useMemo(() => allTx(ledger).filter((t) => t.date >= r.s && t.date <= r.e), [ledger, r.s, r.e]);
   return (
     <>
       <div className="top">

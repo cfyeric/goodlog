@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useMemo, type CSSProperties } from "react";
 import type { Ledger } from "../../core/types";
 import { pd, ymd } from "../../core/dates";
 import { findCategory, pendingList, transfersOfDay, transfersOfMonth, txOfDay } from "../../core/ledger";
@@ -28,7 +28,8 @@ export function Home({ ledger }: { ledger: Ledger }) {
   // 轉到儲蓄帳戶：另外一條，不算支出
   const mSaves = transfersOfMonth(ledger, nav.ym);
   const mSave = mSaves.reduce((a, t) => a + (+t.amount || 0), 0);
-  const hasSave = mSave > 0 || Object.values(ledger.months).some((m) => m.items.some((t) => t.type === "transfer"));
+  const anySave = useMemo(() => Object.values(ledger.months).some((m) => (m.items || []).some((t) => t.type === "transfer")), [ledger.months]);
+  const hasSave = mSave > 0 || anySave;
   const spent = txOfDay(ledger, nav.sel);
   // 轉到儲蓄帳戶的轉帳也列在當天明細（不算支出）
   const list = spent.concat(transfersOfDay(ledger, nav.sel)).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
@@ -99,22 +100,39 @@ function MonthGrid({ ledger, ym, sel, today, onPick }: { ledger: Ledger; ym: str
   const first = new Date(Y, M - 1, 1);
   const off = (first.getDay() + 6) % 7;
   const start = new Date(Y, M - 1, 1 - off);
+  // 這個月和前後月份每一天有沒有支出、收入、幾筆（一次算好，不用每一格各自篩選）
+  const prev = ymd(new Date(Y, M - 2, 1)).slice(0, 7);
+  const next = ymd(new Date(Y, M, 1)).slice(0, 7);
+  const mp = ledger.months[prev], mc = ledger.months[ym], mn = ledger.months[next];
+  const marks = useMemo(() => {
+    const o: Record<string, { e: boolean; n: boolean; c: number }> = {};
+    for (const m of [mp, mc, mn])
+      for (const t of m?.items || []) {
+        if (t.type === "transfer" || t.pending) continue;
+        const x = (o[t.date] ||= { e: false, n: false, c: 0 });
+        x.c++;
+        if (t.type === "expense") x.e = true;
+        if (t.type === "income") x.n = true;
+      }
+    return o;
+  }, [mp, mc, mn]);
   const cells = [];
   for (let i = 0; i < 42; i++) {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
     const ds = ymd(d);
     if (i === 35 && d.getMonth() !== M - 1) break;
-    const list = txOfDay(ledger, ds);
-    const e = list.some((t) => t.type === "expense");
-    const n = list.some((t) => t.type === "income");
+    const mk = marks[ds];
+    const e = !!mk?.e;
+    const n = !!mk?.n;
+    const cnt = mk?.c || 0;
     const cls = ["day"];
     if (d.getMonth() !== M - 1) cls.push("out");
     if (d.getDay() % 6 === 0) cls.push("we");
     if (ds === today) cls.push("today");
     if (ds === sel) cls.push("sel");
     cells.push(
-      <button key={ds} className={cls.join(" ")} aria-label={`${d.getMonth() + 1}月${d.getDate()}日${list.length ? "，" + list.length + "筆" : ""}`} onClick={() => onPick(ds)}>
+      <button key={ds} className={cls.join(" ")} aria-label={`${d.getMonth() + 1}月${d.getDate()}日${cnt ? "，" + cnt + "筆" : ""}`} onClick={() => onPick(ds)}>
         <span className="d">{d.getDate()}</span>
         <span className="dots">
           {e ? <i className="e" /> : null}
