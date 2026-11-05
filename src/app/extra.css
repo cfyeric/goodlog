@@ -48,3 +48,8 @@ body{margin:0}
 .grpchips .cat.on small{color:var(--foreground)}
 .grpchips .seal.nocat,.grpchips .addone .seal{--c:var(--muted-foreground);background:var(--muted-bg);border:1px dashed var(--border);color:var(--muted-foreground)}
 .grpchips .addone{color:var(--muted-foreground);font-weight:500}
+.grpchips .cat.sum{cursor:default;color:var(--muted-foreground);font-weight:500}
+.grpchips .cat.sum .seal{--c:#6aaed6}
+.grpchips .gsep{flex:none;width:1px;align-self:stretch;margin:6px 4px 24px;background:var(--border)}
+.grphint{margin:-8px 0 12px;font-size:12px;color:var(--muted-foreground);text-align:center}
+.dangerbtn{color:var(--destructive,#e7000b);border-color:color-mix(in oklch,var(--destructive,#e7000b) 40%,var(--border))}
