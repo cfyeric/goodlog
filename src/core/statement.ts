@@ -293,6 +293,12 @@ export interface MatchInput {
   rejected: Set<number>;
   /** 使用者確認過的明細索引 */
   accepted: Set<number>;
+  /** 這份帳單的代號（stmtKey）；有給才會用到「已對帳」記號 rc */
+  key?: string;
+  /** 使用者手動對應：明細索引 → 帳本記錄 id */
+  links?: Record<number, string[]>;
+  /** 使用者說「不是這幾筆加起來」的明細索引 */
+  noCombo?: Set<number>;
 }
 
 export type MatchKind = "ok" | "maybe" | "missing" | "refund";
@@ -304,6 +310,12 @@ export interface MatchRow {
   kind: MatchKind;
   /** 日期差幾天 */
   diff: number | null;
+  /** 對上的是好幾筆（多筆群組或手動對應）時，全部的記錄；tx 是第一筆 */
+  txs?: Tx[];
+  /** 對上的方式：群組整組、手動對應、之前已對帳 */
+  via?: "group" | "link" | "rc";
+  /** 漏記時，找到同一天幾筆加起來剛好等於這行金額（要使用者確認） */
+  combo?: Tx[];
   /** 帳單有手續費但帳本那筆沒算 */
   feeMissing?: number;
   /** 金額接近配對時的差額（帳單 − 帳本） */
@@ -314,6 +326,8 @@ export interface MatchResult {
   res: MatchRow[];
   /** 帳本有、帳單沒有的刷卡記錄（帳單期間內） */
   extra: Tx[];
+  /** 之前標成「下期入帳」、這份帳單也還沒出現的記錄 */
+  carried: Tx[];
   lo: DateStr;
   hi: DateStr;
 }
@@ -332,6 +346,7 @@ export function matchStatement(l: Ledger, inp: MatchInput): MatchResult | null {
   const dates = items.map((x) => x.date).sort();
   const lo = dates[0];
   const hi = dates[dates.length - 1];
+  const key = inp.key || "";
   const cidOf = (it: StatementItem) =>
     it.sec && inp.secMap && inp.secMap[it.sec] !== undefined ? inp.secMap[it.sec] : inp.cardId;
   const cids = new Set(items.map(cidOf));
@@ -340,63 +355,223 @@ export function matchStatement(l: Ledger, inp: MatchInput): MatchResult | null {
     const pc = chargeCard(s, t);
     return !cid || !pc || !pc.id || pc.id === cid;
   };
+  // 這份帳單已對過的（rc 是這份帳單的某一行）、標成下期入帳的，不受日期範圍限制；
+  // 已經對上別份帳單的，不再拿來比
+  const linked = new Set(Object.values(inp.links || {}).flat());
+  const mine = (t: Tx) => !!key && !!t.rc && t.rc.startsWith(key + "#");
   const txs = allTx(l).filter((t) => {
     const pc = chargeCard(s, t);
-    return pc && dayDiff(t.date, lo) >= -7 && dayDiff(t.date, hi) <= 7 && (anyAll || !pc.id || cids.has(pc.id));
+    if (!pc || !(anyAll || !pc.id || cids.has(pc.id))) return false;
+    if (key && t.rc && t.rc !== "next" && !mine(t)) return false;
+    if (mine(t) || linked.has(t.id)) return true;
+    if (t.rc === "next") return dayDiff(t.date, hi) <= 7;
+    return dayDiff(t.date, lo) >= -7 && dayDiff(t.date, hi) <= 7;
   });
   const used = new Set<string>();
   const res: MatchRow[] = items.map((it, i) => ({ it, i, tx: null, kind: it.amount < 0 ? "refund" : "missing", diff: null }));
+  const setTxs = (r: MatchRow, list: Tx[], via?: MatchRow["via"]) => {
+    list.forEach((t) => used.add(t.id));
+    r.tx = list[0];
+    if (list.length > 1) r.txs = list;
+    if (via) r.via = via;
+    r.diff = Math.abs(dayDiff(list[0].date, r.it.date));
+  };
+
+  // 0. 之前已對帳、或使用者手動對應的
+  if (key)
+    for (const r of res) {
+      const list = txs.filter((t) => t.rc === key + "#" + r.i);
+      if (list.length) {
+        setTxs(r, list, "rc");
+        r.kind = "ok";
+      }
+    }
+  for (const k in inp.links || {}) {
+    const r = res[+k];
+    if (!r || r.tx) continue;
+    const ids = new Set(inp.links![+k]);
+    const list = txs.filter((t) => ids.has(t.id) && !used.has(t.id));
+    if (list.length) {
+      setTxs(r, list, "link");
+      r.kind = "ok";
+    }
+  }
+
+  // 比對單位：一般記錄一筆一個；多筆群組裡刷這張卡的幾筆合成一個（金額相加）
+  type Unit = { list: Tx[]; date: DateStr; nt: number };
+  const units: Unit[] = [];
+  const byGrp: Record<string, Unit> = {};
+  for (const t of txs) {
+    if (used.has(t.id)) continue;
+    if (t.grp) {
+      const u = byGrp[t.grp];
+      if (u) {
+        u.list.push(t);
+        u.nt = Math.round((u.nt + net(t)) * 100) / 100;
+        continue;
+      }
+      units.push((byGrp[t.grp] = { list: [t], date: t.date, nt: net(t) }));
+    } else units.push({ list: [t], date: t.date, nt: net(t) });
+  }
+  const free = (u: Unit) => !used.has(u.list[0].id);
+  const take = (r: MatchRow, u: Unit) => setTxs(r, u.list, u.list.length > 1 ? "group" : undefined);
 
   for (const lim of [3, 7]) {
     for (const r of res) {
       if (r.tx || r.kind === "refund") continue;
       if (lim === 7 && inp.rejected.has(r.i)) continue;
-      let best: Tx | null = null;
+      let best: Unit | null = null;
       let bd = 99;
-      for (const t of txs) {
-        if (used.has(t.id) || !cardOk(t, cidOf(r.it))) continue;
-        const nt = net(t);
+      for (const u of units) {
+        if (!free(u) || !cardOk(u.list[0], cidOf(r.it))) continue;
+        const nt = u.nt;
         if (Math.abs(nt - r.it.amount) > 0.5 && !(r.it.fee && Math.abs(nt - (r.it.amount - r.it.fee)) <= 0.5)) continue;
-        const d = Math.abs(dayDiff(t.date, r.it.date));
+        const d = Math.abs(dayDiff(u.date, r.it.date));
         if (d <= lim && d < bd) {
-          best = t;
+          best = u;
           bd = d;
         }
       }
       if (best) {
-        used.add(best.id);
-        r.tx = best;
+        take(r, best);
         r.diff = bd;
-        if (r.it.fee && Math.abs(net(best) - r.it.amount) > 0.5) r.feeMissing = r.it.fee;
+        if (r.it.fee && Math.abs(best.nt - r.it.amount) > 0.5) r.feeMissing = r.it.fee;
         const al = findAlias(s, r.it.desc);
-        r.kind = bd <= 3 || inp.accepted.has(r.i) || (al && al.catId && al.catId === best.catId) ? "ok" : "maybe";
+        r.kind = bd <= 3 || inp.accepted.has(r.i) || (al && al.catId && al.catId === best.list[0].catId) ? "ok" : "maybe";
       }
     }
   }
 
   for (const r of res) {
     if (r.tx || r.kind === "refund" || inp.rejected.has(r.i) || r.it.amount < 100) continue;
-    let best: Tx | null = null;
+    let best: Unit | null = null;
     let bs = 1e9;
-    for (const t of txs) {
-      if (used.has(t.id) || !cardOk(t, cidOf(r.it))) continue;
-      const dd = Math.abs(dayDiff(t.date, r.it.date));
-      const da = Math.abs(net(t) - r.it.amount);
+    for (const u of units) {
+      if (!free(u) || !cardOk(u.list[0], cidOf(r.it))) continue;
+      const dd = Math.abs(dayDiff(u.date, r.it.date));
+      const da = Math.abs(u.nt - r.it.amount);
       if (dd > 3 || da > r.it.amount * 0.05) continue;
       const sc = (da / r.it.amount) * 100 + dd;
       if (sc < bs) {
         bs = sc;
-        best = t;
+        best = u;
       }
     }
     if (best) {
-      used.add(best.id);
-      r.tx = best;
+      take(r, best);
       r.diff = Math.abs(dayDiff(best.date, r.it.date));
-      r.amtDiff = Math.round((r.it.amount - net(best)) * 100) / 100;
+      r.amtDiff = Math.round((r.it.amount - best.nt) * 100) / 100;
       r.kind = inp.accepted.has(r.i) ? "ok" : "maybe";
     }
   }
-  const extra = txs.filter((t) => !used.has(t.id) && t.date >= lo && t.date <= hi);
-  return { res, extra, lo, hi };
+
+  // 漏記的那行：找同一天、還沒對上、不在群組裡的 2 到 6 筆，加起來剛好等於這行金額
+  const offered = new Set<string>();
+  for (const r of res) {
+    if (r.tx || r.kind !== "missing" || r.it.amount <= 0 || inp.noCombo?.has(r.i)) continue;
+    const pool = txs.filter(
+      (t) => !used.has(t.id) && !offered.has(t.id) && !t.grp && cardOk(t, cidOf(r.it)) && net(t) > 0 && net(t) < r.it.amount + 0.5 && Math.abs(dayDiff(t.date, r.it.date)) <= 3,
+    );
+    const byDay: Record<string, Tx[]> = {};
+    pool.forEach((t) => (byDay[t.date] ||= []).push(t));
+    const days = Object.keys(byDay).sort((a, b) => Math.abs(dayDiff(a, r.it.date)) - Math.abs(dayDiff(b, r.it.date)));
+    for (const d of days) {
+      const found = subsetSum(byDay[d].slice(0, 14), r.it.amount, 2, 6);
+      if (found) {
+        r.combo = found;
+        found.forEach((t) => offered.add(t.id));
+        break;
+      }
+    }
+  }
+
+  const extra = txs.filter((t) => !used.has(t.id) && t.rc !== "next" && t.date >= lo && t.date <= hi);
+  const carried = txs.filter((t) => !used.has(t.id) && t.rc === "next");
+  return { res, extra, carried, lo, hi };
+}
+
+/** 從 list 裡找 min～max 筆、金額加起來等於 target（差 0.5 元內）的組合；找不到回傳 null */
+function subsetSum(list: Tx[], target: number, min: number, max: number): Tx[] | null {
+  const xs = list.slice().sort((a, b) => net(b) - net(a));
+  const pick: Tx[] = [];
+  const go = (i: number, sum: number): boolean => {
+    if (Math.abs(sum - target) <= 0.5 && pick.length >= min) return true;
+    if (pick.length >= max || sum > target + 0.5) return false;
+    for (let k = i; k < xs.length; k++) {
+      pick.push(xs[k]);
+      if (go(k + 1, sum + net(xs[k]))) return true;
+      pick.pop();
+    }
+    return false;
+  };
+  return go(0, 0) ? pick.slice() : null;
+}
+
+/** 一份帳單的代號：卡片和明細的日期範圍（同一份檔案重新匯入會得到一樣的代號） */
+export function stmtKey(cardId: string, items: StatementItem[]): string {
+  const ds = items.map((x) => x.date).sort();
+  return (cardId || "*") + ":" + ds[0] + "~" + ds[ds.length - 1];
+}
+
+/** 改幾筆記錄的欄位，回傳有變動的月份 */
+function patchTxs(l: Ledger, ids: Set<string>, fn: (t: Tx) => Tx): Record<string, Tx[]> {
+  const months: Record<string, Tx[]> = {};
+  for (const k of Object.keys(l.months)) {
+    const its = l.months[k].items || [];
+    if (!its.some((t) => ids.has(t.id))) continue;
+    months[k] = its.map((t) => (ids.has(t.id) ? fn({ ...t }) : t));
+  }
+  return months;
+}
+
+/** 完成對帳：對上的記錄記下是這份帳單的哪一行 */
+export function reconcile(l: Ledger, key: string, res: MatchRow[]): { months: Record<string, Tx[]>; n: number } {
+  const want: Record<string, string> = {};
+  for (const r of res) {
+    if (r.kind !== "ok" || !r.tx) continue;
+    for (const t of r.txs || [r.tx]) if (t.rc !== key + "#" + r.i) want[t.id] = key + "#" + r.i;
+  }
+  const n = Object.keys(want).length;
+  return { months: n ? patchTxs(l, new Set(Object.keys(want)), (t) => ({ ...t, rc: want[t.id] })) : {}, n };
+}
+
+/** 標成「下期入帳」或取消 */
+export function markNext(l: Ledger, t: Tx, on: boolean): Record<string, Tx[]> {
+  return patchTxs(l, new Set([t.id]), (x) => {
+    if (on) x.rc = "next";
+    else delete x.rc;
+    return x;
+  });
+}
+
+/** 把幾筆（同一天）合成一個多筆群組：時間、商家統一用第一筆的（商家沒填就用第一個有填的） */
+export function mergeGroup(l: Ledger, list: Tx[], gid: string): Record<string, Tx[]> {
+  const f = list.slice().sort((a, b) => (a.time || "").localeCompare(b.time || ""))[0];
+  const merchant = f.merchant || list.find((t) => t.merchant)?.merchant || "";
+  return patchTxs(l, new Set(list.map((t) => t.id)), (t) => {
+    t.grp = gid;
+    t.date = f.date;
+    if (f.time) t.time = f.time;
+    if (merchant) t.merchant = merchant;
+    return t;
+  });
+}
+
+/** 手動對應可以選的記錄：這張卡、這行前後 30 天內、還沒對上的（含已標下期入帳的） */
+export function linkCandidates(l: Ledger, inp: MatchInput, m: MatchResult, i: number): Tx[] {
+  const s = l.settings;
+  const it = inp.items[i];
+  const cid = it.sec && inp.secMap && inp.secMap[it.sec] !== undefined ? inp.secMap[it.sec] : inp.cardId;
+  const used = new Set<string>();
+  m.res.forEach((r) => (r.txs || (r.tx ? [r.tx] : [])).forEach((t) => used.add(t.id)));
+  const key = inp.key || "";
+  return allTx(l)
+    .filter((t) => {
+      const pc = chargeCard(s, t);
+      if (!pc || used.has(t.id)) return false;
+      if (cid && pc.id && pc.id !== cid) return false;
+      if (t.rc && t.rc !== "next" && !(key && t.rc.startsWith(key + "#"))) return false;
+      return Math.abs(dayDiff(t.date, it.date)) <= 30;
+    })
+    .sort((a, b) => Math.abs(dayDiff(a.date, it.date)) - Math.abs(dayDiff(b.date, it.date)) || Math.abs(net(a) - it.amount) - Math.abs(net(b) - it.amount));
 }
