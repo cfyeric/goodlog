@@ -244,6 +244,33 @@ export function Aliases({ ledger }: { ledger: Ledger }) {
   };
 
   const aliases = s.aliases || [];
+  const [ed, setEd] = useState<{ id: string; desc: string; catId: string; name: string; merchant: string } | null>(null);
+  const saveEd = () => {
+    if (!ed || !canWrite()) return;
+    if (!findCategory(s, ed.catId)) return toast("請選一個類別");
+    const merchant = ed.merchant.trim();
+    setSettings((x) => ({
+      ...x,
+      aliases: (x.aliases || []).map((a) => (a.id === ed.id ? { ...a, catId: ed.catId, name: ed.name.trim(), merchant: merchant && merchant !== a.desc ? merchant : "" } : a)),
+    }));
+    setEd(null);
+    toast("已更新");
+  };
+  const catOpts = (["expense", "income"] as const).map((ty) => (
+    <optgroup key={ty} label={ty === "expense" ? "支出" : "收入"}>
+      {(s.groups || [])
+        .filter((g) => g.type === ty)
+        .flatMap((g) =>
+          (s.categories || [])
+            .filter((c) => c.groupId === g.id && (!c.hidden || c.id === ed?.catId))
+            .map((c) => (
+              <option key={c.id} value={c.id}>
+                {g.name} › {c.name}
+              </option>
+            )),
+        )}
+    </optgroup>
+  ));
   return (
     <>
       <div className="top">
@@ -260,14 +287,18 @@ export function Aliases({ ledger }: { ledger: Ledger }) {
             <div className="rows">
               {aliases.map((a) => (
                 <div key={a.id} className="setrow" style={{ justifyContent: "space-between" }}>
-                  <span style={{ minWidth: 0, flex: 1 }}>
+                  <button
+                    className="alrow"
+                    aria-label={`編輯「${a.desc}」的對照`}
+                    onClick={() => setEd({ id: a.id, desc: a.desc, catId: a.catId, name: a.name || "", merchant: a.merchant || a.desc })}
+                  >
                     <span style={{ display: "block", fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.desc}</span>
                     <span style={{ display: "block", fontSize: 12, color: "var(--muted)" }}>
                       → {findCategory(s, a.catId)?.name || "（類別已刪除）"}
                       {a.name ? " · " + a.name : ""}
-                      {a.merchant ? " · " + a.merchant : ""}
+                      {" · " + (a.merchant || a.desc)}
                     </span>
-                  </span>
+                  </button>
                   {delAlias(a.id, a.desc)}
                 </div>
               ))}
@@ -276,7 +307,40 @@ export function Aliases({ ledger }: { ledger: Ledger }) {
             <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--muted)" }}>帳單比對時按「補記」或「是同一筆」，會自動記住帳單名稱對應的類別，下次直接帶入。</p>
           )}
         </div>
+        {aliases.length ? <p className="pkhint" style={{ margin: "0 2px" }}>上面是帳單上的說明，箭頭後面依序是之後補記時自動帶入的類別、名稱、商家。點一下可以修改。</p> : null}
       </div>
+      {ed ? (
+        <div className="dlg-ov" onClick={(e) => e.target === e.currentTarget && setEd(null)}>
+          <div className="dlg enter" role="dialog" aria-modal="true" aria-labelledby="al-t">
+            <h3 id="al-t">編輯商家對照</h3>
+            <p>帳單上的說明：{ed.desc}</p>
+            <div className="namefield">
+              <label htmlFor="al-cat">類別</label>
+              <select id="al-cat" value={ed.catId} onChange={(e) => setEd({ ...ed, catId: e.target.value })}>
+                {findCategory(s, ed.catId) ? null : <option value={ed.catId}>（類別已刪除，請重選）</option>}
+                {catOpts}
+              </select>
+            </div>
+            <div className="namefield">
+              <label htmlFor="al-name">名稱（選填）</label>
+              <input id="al-name" type="search" enterKeyHint="done" autoComplete="off" placeholder="例如：便當" value={ed.name} onChange={(e) => setEd({ ...ed, name: e.target.value })} />
+            </div>
+            <div className="namefield">
+              <label htmlFor="al-mer">商家</label>
+              <input id="al-mer" type="search" enterKeyHint="done" autoComplete="off" placeholder={ed.desc} value={ed.merchant} onChange={(e) => setEd({ ...ed, merchant: e.target.value })} />
+            </div>
+            <p className="pkhint" style={{ margin: 0 }}>商家留空就用帳單上的說明。改了只影響之後補記帶入的內容，不會改到已經記的記錄。</p>
+            <div className="acts" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+              <button className="btn" onClick={() => setEd(null)}>
+                取消
+              </button>
+              <button className="btn primary" onClick={saveEd}>
+                儲存
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }
