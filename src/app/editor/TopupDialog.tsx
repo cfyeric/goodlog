@@ -86,7 +86,7 @@ function TopupDialog() {
         </div>
         <div className="acts">
           {T.id ? (
-            <button className="btn destructive" style={{ marginRight: "auto" }} onClick={del} aria-label="刪除加值">
+            <button className="btn destructive" style={{ marginRight: "auto" }} onClick={del} aria-label="刪除加值" title="刪除加值">
               {armed ? "再按一次刪除" : <Ic name="trash-2" />}
             </button>
           ) : null}

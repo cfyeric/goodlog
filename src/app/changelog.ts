@@ -9,6 +9,10 @@ export interface ChangeDay {
 
 export const CHANGELOG: ChangeDay[] = [
   {
+    date: "2026-11-06",
+    items: ["修正：編輯加值時，左下角刪除按鈕的垃圾桶圖示在 iPhone 上看不到，只剩一塊紅色"],
+  },
+  {
     date: "2026-11-05",
     items: [
       "打開好記更快：只下載有變動的月份，沒變的直接用手機裡的副本",
