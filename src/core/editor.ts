@@ -383,14 +383,8 @@ export type SaveResult =
 
 const clone = <T>(x: T): T => JSON.parse(JSON.stringify(x));
 
-/**
- * 存檔：驗證、清理欄位，然後依情況
- * - 新增排程（週期、分期、延後或提醒的單次）
- * - 編輯週期記錄並套用到之後或全部、或改週期設定
- * - 一般新增或修改
- * newId 用來產生規則 id；today 用來產生提示訊息。
- */
-export function saveDraft(L: Ledger, d: Draft, today: DateStr, newId: () => string, readonly = false): SaveResult {
+/** 存檔前的驗證與欄位清理（單筆）；回傳清理好的記錄或錯誤訊息 */
+export function cleanDraft(d: Draft): { ok: true; tx: Tx; ex: Draft["ex"] } | { ok: false; err: string; openPad?: boolean } {
   const t: Tx = clone(d.t);
   let ex = d.ex;
   if (d.confirmPending && !String(ex.amount).trim() && d.orig) {
@@ -402,7 +396,6 @@ export function saveDraft(L: Ledger, d: Draft, today: DateStr, newId: () => stri
   if (!(t.amount > 0)) return { ok: false, err: "請輸入大於 0 的金額。", openPad: true };
   if (!t.catId) return { ok: false, err: "請選一個類別。" };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(t.date)) return { ok: false, err: "請選擇日期。" };
-  if (readonly) return { ok: false, err: "你沒有寫入這個帳本的權限。" };
   delete t.accountId;
   delete (t as Tx & { toAccountId?: string }).toAccountId;
   if (t.type === "expense") {
@@ -411,6 +404,21 @@ export function saveDraft(L: Ledger, d: Draft, today: DateStr, newId: () => stri
   if (t.pay !== "card" || !t.cardId) delete t.cardId;
   if (t.type !== "expense") delete t.discount;
   delete (t as Tx & { instN?: number }).instN;
+  return { ok: true, tx: t, ex };
+}
+
+/**
+ * 存檔：驗證、清理欄位，然後依情況
+ * - 新增排程（週期、分期、延後或提醒的單次）
+ * - 編輯週期記錄並套用到之後或全部、或改週期設定
+ * - 一般新增或修改
+ * newId 用來產生規則 id；today 用來產生提示訊息。
+ */
+export function saveDraft(L: Ledger, d: Draft, today: DateStr, newId: () => string, readonly = false): SaveResult {
+  const cr = cleanDraft(d);
+  if (!cr.ok) return cr;
+  if (readonly) return { ok: false, err: "你沒有寫入這個帳本的權限。" };
+  const t = cr.tx;
   const cleanTx: Tx = clone(t);
 
   let settings: Settings = L.settings;
@@ -569,6 +577,105 @@ export function saveDraft(L: Ledger, d: Draft, today: DateStr, newId: () => stri
   months[nk] = monthOf(nk).filter((x) => x.id !== cleanTx.id).concat([cleanTx]);
   const msg = recMsg || (d.confirmPending ? "已入帳 " + formatMoney(net(cleanTx)) : d.orig ? "已更新" : "已記下 " + formatMoney(net(cleanTx)));
   return { ok: true, months, settings: settings !== L.settings ? settings : undefined, msg, sel: cleanTx.date };
+}
+
+/* ---------- 多筆群組 ---------- */
+
+/** 跟這筆同一組的所有記錄（照帳本裡的順序）；沒有群組就只有自己 */
+export function groupMembers(L: Ledger, t: Tx): Tx[] {
+  if (!t.grp) return [t];
+  const out: Tx[] = [];
+  for (const k of Object.keys(L.months).sort()) for (const x of L.months[k].items || []) if (x.grp === t.grp) out.push(x);
+  return out.length ? out : [t];
+}
+
+/** 一天的記錄裡，同一組的合成一個項目（順序照每組第一筆出現的位置） */
+export type DayItem = { kind: "tx"; t: Tx } | { kind: "grp"; id: string; items: Tx[] };
+export function groupDay(list: Tx[]): DayItem[] {
+  const out: DayItem[] = [];
+  const at: Record<string, Tx[]> = {};
+  for (const t of list) {
+    if (!t.grp) out.push({ kind: "tx", t });
+    else if (at[t.grp]) at[t.grp].push(t);
+    else {
+      at[t.grp] = [t];
+      out.push({ kind: "grp", id: t.grp, items: at[t.grp] });
+    }
+  }
+  return out.map((x) => (x.kind === "grp" && x.items.length === 1 ? { kind: "tx", t: x.items[0] } : x));
+}
+
+/** 群組在列表上的名稱：第一筆的名稱 → 商家 → 第一筆的類別 */
+export function groupTitle(s: Settings, items: Tx[]): string {
+  const f = items[0];
+  return f?.name || items.find((x) => x.merchant)?.merchant || findCategory(s, f?.catId)?.name || "多筆記錄";
+}
+
+/** 群組合計：收入算正、支出算負 */
+export function groupNet(items: Tx[]): number {
+  return r2(items.reduce((a, t) => a + (t.type === "income" ? net(t) : t.type === "expense" ? -net(t) : 0), 0));
+}
+
+/** 群組裡大家共用的欄位：日期、時間、商家（以目前正在編輯的那筆為準） */
+export function syncShared(from: Tx, to: Tx): Tx {
+  return { ...to, date: from.date, time: from.time, merchant: from.merchant };
+}
+
+/** 在群組裡加一筆：沿用付款方式、卡片、專案、日期時間、商家，其他清空 */
+export function addToGroup(cur: Draft, id: string): Draft {
+  const t = cur.t;
+  return {
+    orig: null,
+    t: { id, type: t.type === "income" ? "income" : "expense", catId: null, amount: 0, fee: 0, discount: 0, pay: t.pay || "cash", cardId: t.cardId || "", projectId: t.projectId || "", name: "", merchant: t.merchant || "", tags: [], note: "", date: t.date, time: t.time },
+    ex: { amount: "", fee: "", discount: "" },
+    mode: null,
+    scope: "one",
+    schedTouched: false,
+    confirmPending: false,
+  };
+}
+
+/**
+ * 存一整組：每筆各自驗證清理，日期、時間、商家用 shared 那筆的；
+ * 兩筆以上就共用一個群組 id，只剩一筆就拿掉群組。原本的記錄（origs）全部換成新的。
+ * 驗證失敗時回傳是第幾筆（idx），畫面切到那筆。
+ */
+export function saveGroup(L: Ledger, drafts: Draft[], origs: Tx[], shared: Tx, newId: () => string, readonly = false): SaveResult & { idx?: number } {
+  const txs: Tx[] = [];
+  for (let i = 0; i < drafts.length; i++) {
+    const cr = cleanDraft({ ...drafts[i], t: syncShared(shared, drafts[i].t) });
+    if (!cr.ok) return { ...cr, idx: i };
+    txs.push(cr.tx);
+  }
+  if (readonly) return { ok: false, err: "你沒有寫入這個帳本的權限。" };
+  const gid = txs.length > 1 ? origs.find((x) => x.grp)?.grp || "g" + newId() : null;
+  for (const t of txs) {
+    if (gid) t.grp = gid;
+    else delete t.grp;
+  }
+  const months: Record<string, Tx[]> = {};
+  const monthOf = (k: string) => months[k] || (L.months[k]?.items || []);
+  for (const o of origs) {
+    const k = o.date.slice(0, 7);
+    months[k] = monthOf(k).filter((x) => x.id !== o.id);
+  }
+  for (const t of txs) {
+    const k = t.date.slice(0, 7);
+    months[k] = monthOf(k).filter((x) => x.id !== t.id).concat([t]);
+  }
+  const sum = formatMoney(Math.abs(groupNet(txs)));
+  const msg = origs.length ? "已更新" : txs.length > 1 ? `已記下 ${txs.length} 筆，共 ${sum}` : "已記下 " + sum;
+  return { ok: true, months, msg, sel: shared.date };
+}
+
+/** 刪除整組多筆記錄 */
+export function deleteTxs(L: Ledger, list: Tx[]): Record<string, Tx[]> {
+  const months: Record<string, Tx[]> = {};
+  for (const o of list) {
+    const k = o.date.slice(0, 7);
+    months[k] = (months[k] || L.months[k]?.items || []).filter((x) => x.id !== o.id);
+  }
+  return months;
 }
 
 /* ---------- 刪除 ---------- */

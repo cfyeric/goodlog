@@ -9,17 +9,20 @@ import { recurHint, schedText } from "../../core/recurrenceText";
 import {
   applyKey, catPath, confirmDraft, dateLabel, deleteGroup, deleteTx, evalExpr, KEYMAP, newDraft, planSummary, quickAmounts,
   recRuleOf, saveDraft, saveTransfer, stopRule, suggestCats, type Draft, type PadKey, type SchedDraft, applySched, schedOpen, SAVE_ACC,
+  addToGroup, deleteTxs, groupMembers, saveGroup, syncShared,
 } from "../../core/editor";
 import { useApp } from "../state";
 import { useNav } from "../nav";
 import { useOverlay, type EditorRequest } from "./context";
-import { Ic, Seal, UiIcon } from "../ui/Icon";
+import { Ic, Seal, Svg, UiIcon } from "../ui/Icon";
 import { CatGrid } from "./CatGrid";
+import { FOLDER } from "../ui/TxRow";
 import { SuggestBar } from "./SuggestBar";
 import { DatePicker } from "./DatePicker";
 import { SchedDialog } from "./SchedDialog";
 
 type PadTarget = "amount" | "fee" | "discount";
+
 
 interface UiState {
   tab: "sug" | "expense" | "income" | "save" | null;
@@ -35,6 +38,8 @@ interface UiState {
   sched: SchedDraft | null;
   sugField: "name" | "merchant" | null;
   prevAmt: number | null;
+  /** 長按群組裡某一筆的類別，跳出的選單（第幾筆） */
+  chipMenu: number | null;
 }
 
 export function EditorHost() {
@@ -63,6 +68,17 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
     return base;
   });
   const t = d.t;
+  // 多筆群組：list[idx] 是正在編輯的那筆（內容以 d 為準），origs 是打開時群組裡原本的記錄
+  const [gp, setGp] = useState<{ list: Draft[]; idx: number; origs: Tx[] }>(() => {
+    if (!req.tx || !req.tx.grp || req.confirmPending) return { list: [d], idx: 0, origs: req.tx && !req.confirmPending ? [req.tx] : [] };
+    const ms = groupMembers(ledger, req.tx);
+    const now = new Date();
+    return { list: ms.map((m) => (m.id === req.tx!.id ? d : newDraft(ledger, m, { date: m.date, now, id: m.id }))), idx: Math.max(0, ms.findIndex((m) => m.id === req.tx!.id)), origs: ms };
+  });
+  const items = gp.list.map((x, i) => (i === gp.idx ? d : x));
+  const multi = items.length > 1;
+  const useGroup = multi || gp.origs.length > 1 || gp.origs.some((o) => o.grp);
+  const grpOrig = gp.origs.length > 1;
   const [u, setU] = useState<UiState>(() => ({
     tab: null,
     group: req.tx ? findCategory(s, req.tx.catId)?.groupId || null : req.prefill?.t.catId ? findCategory(s, req.prefill.t.catId)?.groupId || null : null,
@@ -75,6 +91,7 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
     dp: false,
     sched: null,
     sugField: null,
+    chipMenu: null,
     prevAmt: req.confirmPending && req.tx ? r2((+req.tx.amount || 0) + (+(req.tx.fee ?? 0) || 0) - (req.tx.type === "expense" ? +(req.tx.discount ?? 0) || 0 : 0)) : null,
   }));
   const ui = (p: Partial<UiState>) => setU((x) => ({ ...x, ...p }));
@@ -115,6 +132,7 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
   const total = t.type === "expense" ? val + fee - dis : t.type === "income" ? val - fee : val;
   const PT = u.padTarget;
   const RR = d.orig ? recRuleOf(s, d.orig) : null;
+  const canAdd = !isSave && !d.confirmPending && !d.mode && !(d.orig && (d.orig.rec || d.orig.inst)) && !d.fromImp;
 
   /* ---------- 鍵盤 ---------- */
   const openPad = (k: PadTarget) => {
@@ -179,9 +197,81 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
   const closePadRef = useRef(closePad);
   closePadRef.current = closePad;
 
+  /* ---------- 多筆群組 ---------- */
+  const focusItem = (nd: Draft, pad: boolean) => {
+    const c = findCategory(s, nd.t.catId);
+    ui({ collapsed: !!c, tab: nd.t.type === "income" ? "income" : "expense", group: c?.groupId || null, padTarget: pad ? "amount" : null, padClosing: null, err: "", armed: null, sugField: null });
+  };
+  const switchTo = (i: number) => {
+    if (i === gp.idx) {
+      ui({ collapsed: false, tab: t.type === "income" ? "income" : "expense", group: curC?.groupId || null });
+      return;
+    }
+    const list = items.slice();
+    const nd = { ...list[i], t: syncShared(t, list[i].t) };
+    setGp({ ...gp, list, idx: i });
+    setD(nd);
+    focusItem(nd, false);
+  };
+  const addItem = () => {
+    const nd = addToGroup(d, uid8());
+    setGp({ ...gp, list: items.concat([nd]), idx: items.length });
+    setD(nd);
+    focusItem(nd, true);
+  };
+  const removeItem = (at: number = gp.idx) => {
+    if (!multi) return;
+    const list = items.filter((_, i) => i !== at);
+    // 刪的是正在編輯的那筆：改編輯前一筆；刪別筆：繼續編輯原本那筆
+    const ni = at === gp.idx ? Math.max(0, at - 1) : gp.idx > at ? gp.idx - 1 : gp.idx;
+    const nd = at === gp.idx ? { ...list[ni], t: syncShared(t, list[ni].t) } : d;
+    setGp({ ...gp, list: list.map((x, i) => (i === ni ? nd : x)), idx: ni });
+    setD(nd);
+    if (at === gp.idx) focusItem(nd, false);
+    ui({ chipMenu: null });
+    toast("已從這組移除，按右上角儲存才會生效");
+  };
+  // 長按類別圖示 → 跳出刪除選單
+  const lp = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean }>({ timer: null, fired: false });
+  const pressStart = (i: number) => {
+    lp.current.fired = false;
+    if (lp.current.timer) clearTimeout(lp.current.timer);
+    if (!multi) return;
+    lp.current.timer = setTimeout(() => {
+      lp.current.fired = true;
+      navigator.vibrate?.(10);
+      ui({ chipMenu: i });
+    }, 480);
+  };
+  const pressEnd = () => {
+    if (lp.current.timer) clearTimeout(lp.current.timer);
+    lp.current.timer = null;
+  };
+  const amtOf = (x: Draft) => {
+    const v = evalExpr(x.ex.amount), f = evalExpr(x.ex.fee), di = evalExpr(x.ex.discount);
+    return x.t.type === "expense" ? v + f - di : v - f;
+  };
+  // 合計圖示的名稱：商家（整組共用，等於第一筆的商家），沒填就叫「多類別」
+  const sumName = (t.merchant || "").trim() || "多類別";
+  const groupSum = items.reduce((a, x) => a + (x.t.type === "income" ? -amtOf(x) : amtOf(x)), 0);
+
   /* ---------- 動作 ---------- */
   const save = () => {
     if (isSave && !canWrite()) return;
+    if (!isSave && useGroup) {
+      const res = saveGroup(ledger, items, gp.origs, t, uid8, storeMode === "readonly");
+      if (!res.ok) {
+        if (res.idx != null && res.idx !== gp.idx) switchTo(res.idx);
+        ui({ err: (multi && res.idx != null ? `第 ${res.idx + 1} 筆：` : "") + res.err, ...(res.openPad ? { padTarget: "amount" as const, padClosing: null } : {}) });
+        toast(res.err);
+        return;
+      }
+      commit({ months: res.months });
+      if (res.sel) go((n) => ({ sel: res.sel!, ym: res.sel!.slice(0, 7), view: n.view === "settings" ? "home" : n.view }));
+      closeEditor();
+      toast(res.msg);
+      return;
+    }
     const res = isSave ? saveTransfer(ledger, d, uid8()) : saveDraft(ledger, d, today, uid8, storeMode === "readonly");
     if (!res.ok) {
       ui({ err: res.err, ...(res.openPad ? { padTarget: "amount" as const, padClosing: null } : {}) });
@@ -203,6 +293,12 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
     commit({ months: deleteTx(ledger, d.orig) });
     closeEditor();
     toast("已刪除");
+  };
+  const delGrp = () => {
+    if (!arm("grpall") || !gp.origs.length) return;
+    commit({ months: deleteTxs(ledger, gp.origs) });
+    closeEditor();
+    toast(`已刪除整組（${gp.origs.length} 筆）`);
   };
   const delAll = () => {
     if (!arm("txall") || !d.orig) return;
@@ -342,17 +438,43 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
     >
       <div className="in">
         <div className="shead">
-          <button className="iconbtn" aria-label="取消" onClick={closeEditor}>
-            <UiIcon name="x" />
-          </button>
-          <h2>{d.confirmPending ? "確認入帳" : d.orig ? "編輯記錄" : "記一筆"}</h2>
+          {multi ? (
+            <button
+              className="btn txtbtn"
+              aria-label={!t.catId && !d.orig ? "不加這一筆" : "取消，不儲存"}
+              onClick={() => {
+                // 剛按「多一筆」還沒選類別：取消只是不加這筆，回到上一筆
+                if (!t.catId && !d.orig) {
+                  const at = gp.idx;
+                  const list = items.filter((_, i) => i !== at);
+                  const ni = Math.max(0, at - 1);
+                  const nd = { ...list[ni], t: syncShared(t, list[ni].t) };
+                  setGp({ ...gp, list, idx: ni });
+                  setD(nd);
+                  focusItem(nd, false);
+                  return;
+                }
+                closeEditor();
+              }}
+            >
+              取消
+            </button>
+          ) : (
+            <button className="iconbtn" aria-label="取消" onClick={closeEditor}>
+              <UiIcon name="x" />
+            </button>
+          )}
+          <h2>
+            {d.confirmPending ? "確認入帳" : d.orig || gp.origs.length ? "編輯記錄" : "記一筆"}
+            {multi ? <small className="grpn">{items.length} 筆 · 合計 {formatMoney(Math.abs(groupSum))}</small> : null}
+          </h2>
           <button className="iconbtn okbtn" aria-label="儲存" onClick={save}>
             <UiIcon name="check" />
           </button>
         </div>
         {colC ? null : (
-          <div className={"ttabs" + (sug.length ? " four" : " three")} role="tablist">
-            {((sug.length ? [["sug", "建議"]] : []) as [string, string][]).concat([["expense", "支出"], ["income", "收入"], ["save", "儲蓄"]]).map(([k, l]) => (
+          <div className={"ttabs" + (["", "", " two", " three", " four"][(sug.length ? 1 : 0) + (multi || grpOrig ? 2 : 3)])} role="tablist">
+            {((sug.length ? [["sug", "建議"]] : []) as [string, string][]).concat([["expense", "支出"], ["income", "收入"]], multi || grpOrig ? [] : [["save", "儲蓄"]]).map(([k, l]) => (
               <button key={k} className={tab === k ? "on" : ""} role="tab" aria-selected={tab === k} onClick={() => chooseType(k as "sug")}>
                 {k === "sug" ? <Ic name="sparkles" /> : null}
                 {l}
@@ -378,20 +500,62 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
               </span>
             </div>
           ) : colC ? (
-            <div className="catpick">
-              <button
-                className="cat"
-                aria-label={`更換類別（目前：${catPath(s, colC)}）`}
-                title="點一下更換類別"
-                onClick={() => {
-                  ui({ collapsed: false, tab: t.type === "income" ? "income" : "expense", group: colC.groupId || null });
-                }}
-              >
-                <Seal c={colC} s={s} />
-                <span>{colC.name}</span>
-              </button>
+            <div className={"catpick grpchips" + (multi ? " multi" : "")}>
+              {multi ? (
+                <>
+                  <span className="cat sum" aria-label={`${sumName}，共 ${items.length} 筆，合計 ${formatMoney(Math.abs(groupSum))}`}>
+                    <span className="seal">
+                      <Svg node={FOLDER} />
+                    </span>
+                    <span className="sumname">{sumName}</span>
+                    <small className="num">{formatMoney(Math.abs(groupSum))}</small>
+                  </span>
+                  <span className="gsep" aria-hidden="true" />
+                </>
+              ) : null}
+              {items.map((x, i) => {
+                const c = i === gp.idx ? curC : findCategory(s, x.t.catId);
+                const on = i === gp.idx;
+                return (
+                  <button
+                    key={x.t.id}
+                    className={"cat" + (on && multi ? " on" : "")}
+                    aria-label={on ? (c ? `更換類別（目前：${catPath(s, c)}）` : "選類別") : `切換到第 ${i + 1} 筆（${c ? c.name : "還沒選類別"}）`}
+                    title={on ? "點一下更換類別" : "切換到這一筆"}
+                    onClick={() => {
+                      if (lp.current.fired) return void (lp.current.fired = false);
+                      switchTo(i);
+                    }}
+                    onPointerDown={() => pressStart(i)}
+                    onPointerUp={pressEnd}
+                    onPointerLeave={pressEnd}
+                    onPointerCancel={pressEnd}
+                    onContextMenu={(e) => {
+                      if (!multi) return;
+                      e.preventDefault();
+                      pressEnd();
+                      lp.current.fired = true;
+                      ui({ chipMenu: i });
+                    }}
+                  >
+                    {c ? <Seal c={c} s={s} /> : <span className="seal nocat">？</span>}
+                    <span>{c ? c.name : "選類別"}</span>
+                    {multi ? <small className="num">{formatMoney(amtOf(x))}</small> : null}
+                  </button>
+                );
+              })}
+              {canAdd ? (
+                <button className="cat addone" aria-label="同一筆再加一個類別（多筆群組）" title="多一筆" onClick={addItem}>
+                  <span className="seal">
+                    <UiIcon name="plus" />
+                  </span>
+                  <span>多一筆</span>
+                </button>
+              ) : null}
             </div>
-          ) : (
+          ) : null}
+          {multi && colC ? <p className="grphint">點類別切換要編輯的那筆，長按可以刪除</p> : null}
+          {isSave || colC ? null : (
             <CatGrid
               s={s}
               mode={catMode}
@@ -524,7 +688,7 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
                 (document.activeElement as HTMLElement | null)?.blur?.();
               }}
             />}
-            {isSave ? null : schedField}
+            {isSave || useGroup ? null : schedField}
             {isSave ? null : <div className="field full">
               <label htmlFor="f-inv">發票號碼</label>
               <input id="f-inv" type="search" enterKeyHint="done" autoComplete="off" placeholder="發票號碼" value={t.invoice || ""} onChange={(e) => setT({ invoice: e.target.value })} />
@@ -541,7 +705,7 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
             ) : null}
             {isSave ? null : <div className="field full">
               <label htmlFor="f-tags">標籤（以空白分隔）</label>
-              <TagsInput tags={t.tags || []} onChange={(tags) => setT({ tags })} />
+              <TagsInput key={t.id} tags={t.tags || []} onChange={(tags) => setT({ tags })} />
             </div>}
             <div className="field full">
               <label htmlFor="f-note">備註</label>
@@ -551,7 +715,12 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
           <div className="err" id="err" role="alert">
             {u.err}
           </div>
-          {d.orig ? (
+          {grpOrig ? (
+            <button className={"danger" + (u.armed === "grpall" ? " arm" : "")} onClick={delGrp}>
+              {u.armed === "grpall" ? "再按一次，刪除整組" : `刪除整組（${gp.origs.length} 筆）`}
+            </button>
+          ) : null}
+          {d.orig && !multi && !grpOrig ? (
             <button className={"danger" + (u.armed === "tx" ? " arm" : "")} onClick={del}>
               {u.armed === "tx" ? "再按一次確定刪除" : d.orig.inst ? "只刪除這一期" : "刪除這筆記錄"}
             </button>
@@ -659,6 +828,24 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
           />
         ) : null}
       </div>
+      {u.chipMenu != null && items[u.chipMenu] ? (
+        <div className="dlg-ov" onClick={(e) => e.target === e.currentTarget && ui({ chipMenu: null })}>
+          <div className="dlg enter" role="dialog" aria-modal="true" aria-labelledby="cm-t">
+            <h3 id="cm-t">
+              {findCategory(s, (u.chipMenu === gp.idx ? t : items[u.chipMenu].t).catId)?.name || "還沒選類別"} {formatMoney(amtOf(items[u.chipMenu]))}
+            </h3>
+            <p>從這組刪除這一筆。按右上角儲存後才會生效，按取消可以放棄。</p>
+            <div className="acts" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+              <button className="btn" onClick={() => ui({ chipMenu: null })}>
+                取消
+              </button>
+              <button className="btn dangerbtn" onClick={() => removeItem(u.chipMenu!)}>
+                刪除這筆
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {u.dp ? (
         <div id="dpRoot">
         <DatePicker

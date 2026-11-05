@@ -2,7 +2,8 @@ import type { Settings, Tx } from "../../core/types";
 import { cardOf, findCategory, findProject, payOf, svParent } from "../../core/ledger";
 import { formatMoney, net } from "../../core/money";
 import { everyText } from "../../core/recurrenceText";
-import { Seal } from "./Icon";
+import { groupNet, groupTitle } from "../../core/editor";
+import { Seal, Svg } from "./Icon";
 import { useOverlay } from "../editor/context";
 
 const md = (d: string) => +d.slice(5, 7) + "/" + +d.slice(8, 10);
@@ -83,3 +84,37 @@ export function TxRow({ t, s, showDate }: { t: Tx; s: Settings; showDate?: boole
     </button>
   );
 }
+
+/** 多筆群組合成的一列：名稱、筆數、合計；點了打開整組編輯 */
+export function GroupRow({ items, s }: { items: Tx[]; s: Settings }) {
+  const { openEditor } = useOverlay();
+  const f = items[0];
+  const v = groupNet(items);
+  const cats = [...new Set(items.map((t) => findCategory(s, t.catId)?.name).filter(Boolean))];
+  const sub: string[] = [items.length + " 筆"];
+  if (cats.length) sub.push(cats.slice(0, 3).join("、") + (cats.length > 3 ? "…" : ""));
+  if (f.time) sub.push(f.time);
+  const pays = [...new Set(items.filter((t) => t.type === "expense").map((t) => (payOf(s, t) === "card" ? cardOf(s, t)?.name || "信用卡" : "現金")))];
+  const projs = [...new Set(items.map((t) => findProject(s, t.projectId)?.name).filter(Boolean))];
+  return (
+    <button className="tx" onClick={() => openEditor({ tx: f })}>
+      <span className="seal grpseal" aria-hidden="true">
+        <Svg node={FOLDER} />
+      </span>
+      <span className="txm">
+        <span className="n" style={{ display: "block" }}>{groupTitle(s, items)}</span>
+        <span className="s" style={{ display: "block" }}>{sub.join(" · ")}</span>
+      </span>
+      <span className="txr">
+        <span className={"amt " + (v > 0 ? "i" : "e")}>{(v > 0 ? "+" : "−") + formatMoney(Math.abs(v))}</span>
+        <span className="chips">
+          {projs.length === 1 ? <span className="chip proj">{projs[0]}</span> : null}
+          {pays.length === 1 ? <span className="chip">{pays[0]}</span> : pays.length > 1 ? <span className="chip">多種付款</span> : null}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/** 多類別的資料夾圖示（lucide folder） */
+export const FOLDER: [string, Record<string, string>][] = [["path", { d: "M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" }]];
