@@ -9,6 +9,10 @@ export interface ChangeDay {
 
 export const CHANGELOG: ChangeDay[] = [
   {
+    date: "2026-11-05",
+    items: ["記一筆可以多筆一組（像 MOZE）：按類別旁的「多一筆」再加一個類別，每筆各自填金額、名稱、付款、專案，日期、時間、商家整組共用；日曆上合成一列，點開可以編輯整組"],
+  },
+  {
     date: "2026-11-04",
     items: ["報表總覽的「最大三筆支出」改成列出最大 20 筆"],
   },

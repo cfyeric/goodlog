@@ -9,7 +9,8 @@ import { useNav } from "../nav";
 import { useOverlay } from "../editor/context";
 import { Ic, Seal, UiIcon } from "../ui/Icon";
 import { MonthSwiper } from "./MonthSwiper";
-import { TxRow } from "../ui/TxRow";
+import { GroupRow, TxRow } from "../ui/TxRow";
+import { groupDay } from "../../core/editor";
 import { HpBar } from "../ui/HpBar";
 
 const WD = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"];
@@ -73,9 +74,7 @@ export function Home({ ledger }: { ledger: Ledger }) {
       {list.length ? (
         <div className="card" style={{ padding: "4px 12px" }}>
           <div className="list">
-            {list.map((t) => (
-              <TxRow key={t.id} t={t} s={s} />
-            ))}
+            {groupDay(list).map((x) => (x.kind === "grp" ? <GroupRow key={x.id} items={x.items} s={s} /> : <TxRow key={x.t.id} t={x.t} s={s} />))}
           </div>
         </div>
       ) : (
