@@ -2,12 +2,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Ledger, Tx } from "../../core/types";
 import { cardOf, findCard, findCategory, makeTopup } from "../../core/ledger";
-import { formatMoney, net } from "../../core/money";
+import { formatMoney, net, r2 } from "../../core/money";
+import { addDays } from "../../core/dates";
 import { uid8 } from "../../core/ids";
 import { findAlias, learnAlias } from "../../core/alias";
 import {
-  buildItems, decodeText, findCloseDate, guessHeader, guessMap, initSecMap, matchStatement, parseCSV,
-  type ColumnMap, type MatchRow, type StatementItem,
+  buildItems, decodeText, findCloseDate, guessHeader, guessMap, initSecMap, linkCandidates, markNext, matchStatement, mergeGroup, parseCSV,
+  reconcile, stmtKey, type ColumnMap, type MatchInput, type MatchRow, type StatementItem,
 } from "../../core/statement";
 import { useApp } from "../state";
 import { useOverlay } from "../editor/context";
@@ -83,6 +84,13 @@ interface Imp {
   secMap: Record<string, string>;
   pays: number;
   acc: Set<number>;
+  /** 手動對應：明細索引 → 記錄 id */
+  links: Record<number, string[]>;
+  /** 說過「不是這幾筆加起來」的明細索引 */
+  noCombo: Set<number>;
+  /** 正在幫哪一行選帳本記錄（手動對應） */
+  pick: number | null;
+  pickSel: string[];
   rej: Set<number>;
 }
 
@@ -97,7 +105,7 @@ function ImportSheet({ ledger }: { ledger: Ledger }) {
   const { today, mode, setSettings, commit, canWrite, toast } = useApp();
   const { setImportOpen, openEditor } = useOverlay();
   const s = ledger.settings;
-  const [I2, setI] = useState<Imp>({ cardId: "", headerIdx: 0, map: { date: -1, desc: -1, amount: -1 }, items: [], secs: [], secMap: {}, pays: 0, acc: new Set(), rej: new Set() });
+  const [I2, setI] = useState<Imp>({ cardId: "", headerIdx: 0, map: { date: -1, desc: -1, amount: -1 }, items: [], secs: [], secMap: {}, pays: 0, acc: new Set(), rej: new Set(), links: {}, noCombo: new Set(), pick: null, pickSel: [] });
   const upd = (p: Partial<Imp>) => setI((x) => ({ ...x, ...p }));
 
   useEffect(() => {
@@ -110,7 +118,7 @@ function ImportSheet({ ledger }: { ledger: Ledger }) {
 
   const rebuild = (base: Imp, map: ColumnMap): Imp => {
     const b = buildItems(base.rows || [], base.headerIdx, map, base.ref || null, today);
-    return { ...base, map, items: b.items, secs: b.secs, pays: b.pays, secMap: initSecMap(s, b.secs, base.cardId, base.secMap), acc: new Set(), rej: new Set() };
+    return { ...base, map, items: b.items, secs: b.secs, pays: b.pays, secMap: initSecMap(s, b.secs, base.cardId, base.secMap), acc: new Set(), rej: new Set(), links: {}, noCombo: new Set(), pick: null, pickSel: [] };
   };
   const saveCsvMap = (x: Imp) => {
     const c = findCard(s, x.cardId);
@@ -143,7 +151,9 @@ function ImportSheet({ ledger }: { ledger: Ledger }) {
     }
   };
 
-  const m = I2.items.length ? matchStatement(ledger, { items: I2.items, cardId: I2.cardId, secMap: I2.secMap, rejected: I2.rej, accepted: I2.acc }) : null;
+  const key = I2.items.length ? stmtKey(I2.cardId, I2.items) : "";
+  const mi: MatchInput = { items: I2.items, cardId: I2.cardId, secMap: I2.secMap, rejected: I2.rej, accepted: I2.acc, key, links: I2.links, noCombo: I2.noCombo };
+  const m = I2.items.length ? matchStatement(ledger, mi) : null;
   const md = (d: string) => +d.slice(5, 7) + "/" + +d.slice(8, 10);
   const headers = (I2.rows?.[I2.headerIdx] || []).map((h, i) => h || "第 " + (i + 1) + " 欄");
   const cards = s.cards || [];
@@ -191,7 +201,98 @@ function ImportSheet({ ledger }: { ledger: Ledger }) {
     if (n) toast(n > 1 ? `已補上 ${n} 筆手續費` : "已補上手續費");
   };
 
-  const row = (r: MatchRow, acts?: ReactNode) => {
+  /* ---------- 多筆、手動對應、下期入帳、完成對帳 ---------- */
+  const tname = (t: Tx) => t.name || findCategory(s, t.catId)?.name || "";
+  const sameDay = (list: Tx[]) => list.length > 1 && list.every((t) => t.date === list[0].date) && list.every((t) => !t.grp);
+  const acceptCombo = (r: MatchRow) => {
+    if (!r.combo || !canWrite()) return;
+    commit({ months: mergeGroup(ledger, r.combo, "g" + uid8()) });
+    toast(`已把 ${r.combo.length} 筆合成一組，對上這行帳單`);
+  };
+  const saveLink = () => {
+    const i = I2.pick;
+    if (i == null || !I2.pickSel.length) return;
+    const list = allLedgerTx.filter((t) => I2.pickSel.includes(t.id));
+    setI((x) => ({ ...x, links: { ...x.links, [i]: x.pickSel.slice() }, pick: null, pickSel: [] }));
+    if (sameDay(list) && mode === "live") {
+      commit({ months: mergeGroup(ledger, list, "g" + uid8()) });
+      toast(`已對應 ${list.length} 筆，並合成一組`);
+    } else toast(list.length > 1 ? `已對應 ${list.length} 筆` : "已對應");
+  };
+  const unlink = (i: number) =>
+    setI((x) => {
+      const links = { ...x.links };
+      delete links[i];
+      return { ...x, links };
+    });
+  const setNext = (t: Tx, on: boolean) => {
+    if (!canWrite()) return;
+    commit({ months: markNext(ledger, t, on) });
+    toast(on ? "已標成下期入帳，下次匯入帳單會再拿來比對" : "已取消下期入帳");
+  };
+  const finish = () => {
+    if (!m) return;
+    if (!canWrite()) return;
+    const r = reconcile(ledger, key, m.res);
+    if (r.n) commit({ months: r.months });
+    setImportOpen(false);
+    toast(r.n ? `已記下對帳（${r.n} 筆記錄）` : "已對上的記錄之前就記過了");
+  };
+  const allLedgerTx = Object.values(ledger.months).flatMap((x) => x.items || []);
+  const linkPicker = () => {
+    const i = I2.pick!;
+    const it = I2.items[i];
+    const cands = linkCandidates(ledger, mi, m!, i);
+    const selSum = r2(cands.filter((t) => I2.pickSel.includes(t.id)).reduce((a, t) => a + net(t), 0));
+    const toggle = (id: string) => setI((x) => ({ ...x, pickSel: x.pickSel.includes(id) ? x.pickSel.filter((y) => y !== id) : x.pickSel.concat([id]) }));
+    const close = () => setI((x) => ({ ...x, pick: null, pickSel: [] }));
+    return (
+      <div className="dlg-ov" onClick={(e) => e.target === e.currentTarget && close()}>
+        <div className="dlg linkdlg enter" role="dialog" aria-modal="true" aria-labelledby="lk-t">
+          <h3 id="lk-t">選帳本記錄對應</h3>
+          <p>
+            帳單 {md(it.date)} {it.desc || "（無說明）"} <b className="num">{formatMoney(it.amount)}</b>
+          </p>
+          <p>可以勾好幾筆（例如同一張發票分開記的），同一天的會自動合成一組。</p>
+          <div className="linklist">
+            {cands.length ? (
+              cands.map((t) => (
+                <label key={t.id} className={"linkrow" + (I2.pickSel.includes(t.id) ? " on" : "")}>
+                  <input type="checkbox" checked={I2.pickSel.includes(t.id)} onChange={() => toggle(t.id)} />
+                  <span className="d">{md(t.date)}</span>
+                  <span className="m">
+                    {tname(t)}
+                    <small>
+                      {cardOf(s, t)?.name || "未指定卡片"}
+                      {t.merchant ? " · " + t.merchant : ""}
+                      {t.rc === "next" ? " · 下期入帳" : ""}
+                    </small>
+                  </span>
+                  <span className="a num">{formatMoney(net(t))}</span>
+                </label>
+              ))
+            ) : (
+              <p className="pkhint">前後 30 天內沒有還沒對上的刷卡記錄。</p>
+            )}
+          </div>
+          <p className="num" style={{ color: I2.pickSel.length && Math.abs(selSum - it.amount) > 0.5 ? "var(--exp)" : undefined }}>
+            已選 {I2.pickSel.length} 筆，合計 {formatMoney(selSum)}
+            {I2.pickSel.length && Math.abs(selSum - it.amount) > 0.5 ? `（跟帳單差 ${formatMoney(Math.abs(r2(it.amount - selSum)))}）` : ""}
+          </p>
+          <div className="acts" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 4 }}>
+            <button className="btn" onClick={close}>
+              取消
+            </button>
+            <button className="btn primary" disabled={!I2.pickSel.length} onClick={saveLink}>
+              對應
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const row = (r: MatchRow, acts?: ReactNode, extra?: ReactNode) => {
     const al = !r.tx ? findAlias(s, r.it.desc) : null;
     return (
       <div className="irow" key={r.i}>
@@ -202,7 +303,8 @@ function ImportSheet({ ledger }: { ledger: Ledger }) {
           {al ? <small>對照：{(findCategory(s, al.catId)?.name || "") + (al.name ? " · " + al.name : "")}</small> : null}
           {r.tx ? (
             <small>
-              帳本：{md(r.tx.date)} {r.tx.name || findCategory(s, r.tx.catId)?.name || ""}
+              帳本：{md(r.tx.date)} {r.txs ? `${r.txs.length} 筆（${r.txs.map(tname).join("、")}）` : tname(r.tx)}
+              {r.via === "link" ? " · 手動對應" : r.via === "rc" ? " · 已對帳" : ""}
               {r.diff ? ` · 差 ${r.diff} 天` : ""}
               {r.feeMissing ? ` · 帳本沒記手續費 ${formatMoney(r.feeMissing)}` : ""}
               {r.amtDiff ? ` · 金額差 ${r.amtDiff > 0 ? "+" : "−"}${formatMoney(r.amtDiff)}` : ""}
@@ -214,6 +316,7 @@ function ImportSheet({ ledger }: { ledger: Ledger }) {
           {formatMoney(r.it.amount)}
         </span>
         {acts ? <span className="acts2">{acts}</span> : null}
+        {extra}
       </div>
     );
   };
@@ -304,10 +407,31 @@ function ImportSheet({ ledger }: { ledger: Ledger }) {
                       </button>
                     </>
                   ) : (
-                    <button className="btn sm primary" onClick={() => addMissing(r)}>
-                      補記
-                    </button>
+                    <>
+                      <button className="btn sm" onClick={() => setI((x) => ({ ...x, pick: r.i, pickSel: [] }))}>
+                        選帳本記錄
+                      </button>
+                      <button className="btn sm primary" onClick={() => addMissing(r)}>
+                        補記
+                      </button>
+                    </>
                   ),
+                  r.combo ? (
+                    <div className="combo">
+                      <b>
+                        可能是同一天這 {r.combo.length} 筆加起來：
+                      </b>
+                      <span>{r.combo.map((t) => `${tname(t)} ${formatMoney(net(t))}`).join("、")}</span>
+                      <span className="acts2">
+                        <button className="btn sm" onClick={() => setI((x) => ({ ...x, noCombo: new Set(x.noCombo).add(r.i) }))}>
+                          不是
+                        </button>
+                        <button className="btn sm primary" onClick={() => acceptCombo(r)}>
+                          是，合成一組
+                        </button>
+                      </span>
+                    </div>
+                  ) : null,
                 ),
               ),
             )
@@ -363,34 +487,65 @@ function ImportSheet({ ledger }: { ledger: Ledger }) {
               </>,
             )
           : null}
-        {m.extra.length
-          ? sect(
-              "var(--xfer)",
-              "帳本有、帳單沒有",
-              m.extra.length,
-              <>
-                {m.extra.map((t) => (
-                  <div className="irow" key={t.id}>
-                    <span className="d">{md(t.date)}</span>
-                    <span className="m">
-                      {t.name || findCategory(s, t.catId)?.name || ""}
-                      <small>
-                        {cardOf(s, t)?.name || "未指定卡片"}
-                        {t.merchant ? " · " + t.merchant : ""}
-                      </small>
-                    </span>
-                    <span className="a">{formatMoney(net(t))}</span>
-                    <span className="acts2">
-                      <button className="btn sm" onClick={() => openEditor({ tx: t })}>
-                        查看
-                      </button>
-                    </span>
-                  </div>
-                ))}
-                <p className="pkhint">可能是記錯卡、記成現金，或還沒入帳。</p>
-              </>,
-            )
-          : null}
+        {(() => {
+          const inCombo = new Set(m.res.flatMap((r) => (r.combo || []).map((t) => t.id)));
+          const ex = m.extra.filter((t) => !inCombo.has(t.id));
+          const lateFrom = addDays(m.hi, -7);
+          const late = ex.filter((t) => t.date >= lateFrom);
+          const other = ex.filter((t) => t.date < lateFrom);
+          const txRow = (t: Tx, acts: ReactNode) => (
+            <div className="irow" key={t.id}>
+              <span className="d">{md(t.date)}</span>
+              <span className="m">
+                {tname(t)}
+                <small>
+                  {cardOf(s, t)?.name || "未指定卡片"}
+                  {t.merchant ? " · " + t.merchant : ""}
+                </small>
+              </span>
+              <span className="a">{formatMoney(net(t))}</span>
+              <span className="acts2">
+                <button className="btn sm" onClick={() => openEditor({ tx: t })}>
+                  查看
+                </button>
+                {acts}
+              </span>
+            </div>
+          );
+          const nextBtn = (t: Tx) => (
+            <button className="btn sm" onClick={() => setNext(t, true)}>
+              下期入帳
+            </button>
+          );
+          return (
+            <>
+              {other.length
+                ? sect("var(--xfer)", "帳本有、帳單沒有", other.length, <>{other.map((t) => txRow(t, nextBtn(t)))}<p className="pkhint">可能是記錯卡、記成現金，或還沒入帳。確定是下期才入帳的，按「下期入帳」，這次就不再列出，下次匯入帳單會再拿來比對。</p></>)
+                : null}
+              {late.length
+                ? sect("var(--muted-foreground)", "可能下期才入帳", late.length, <>{late.map((t) => txRow(t, nextBtn(t)))}<p className="pkhint">刷卡日在帳單最後 7 天內，常常會到下一期帳單才出現。</p></>)
+                : null}
+              {m.carried.length
+                ? sect(
+                    "var(--muted-foreground)",
+                    "標成下期入帳、這份帳單還沒出現",
+                    m.carried.length,
+                    <>
+                      {m.carried.map((t) =>
+                        txRow(
+                          t,
+                          <button className="btn sm" onClick={() => setNext(t, false)}>
+                            取消下期
+                          </button>,
+                        ),
+                      )}
+                      <p className="pkhint">如果這份帳單裡其實有，到上面那行按「選帳本記錄」手動對應。</p>
+                    </>,
+                  )
+                : null}
+            </>
+          );
+        })()}
         {rf.length ? sect("var(--muted-foreground)", "退款／負數", rf.length, rf.map((r) => row(r))) : null}
         {okr.length ? (
           <details style={{ marginTop: 14 }}>
@@ -398,10 +553,23 @@ function ImportSheet({ ledger }: { ledger: Ledger }) {
               已對上<span className="cnt">{okr.length}</span>
             </summary>
             <div className="card" style={{ padding: "2px 14px", marginTop: 6 }}>
-              {okr.map((r) => row(r))}
+              {okr.map((r) =>
+                row(
+                  r,
+                  r.via === "link" ? (
+                    <button className="btn sm" onClick={() => unlink(r.i)}>
+                      取消對應
+                    </button>
+                  ) : undefined,
+                ),
+              )}
             </div>
           </details>
         ) : null}
+        <button className="btn primary finbtn" onClick={finish}>
+          完成對帳（記下 {ok.length} 行已對上）
+        </button>
+        <p className="pkhint">按「完成對帳」會在對上的記錄記下是哪一份帳單，之後匯入其他期的帳單就不會再拿它們來比；重新匯入同一份帳單時照樣會對上。</p>
       </>
     );
   }
@@ -415,7 +583,13 @@ function ImportSheet({ ledger }: { ledger: Ledger }) {
             <UiIcon name="x" />
           </button>
           <h2>帳單比對</h2>
-          <span style={{ width: 36 }} />
+          {m ? (
+            <button className="iconbtn okbtn" aria-label="完成對帳" onClick={finish}>
+              <UiIcon name="check" />
+            </button>
+          ) : (
+            <span style={{ width: 36 }} />
+          )}
         </div>
         <div className="sbody" id="isbody">
           <div className="namefield" style={{ marginBottom: 12 }}>
@@ -518,6 +692,7 @@ function ImportSheet({ ledger }: { ledger: Ledger }) {
             </>
           ) : null}
           {result}
+          {I2.pick != null && m ? linkPicker() : null}
         </div>
       </div>
     </div>

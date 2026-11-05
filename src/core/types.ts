@@ -48,6 +48,11 @@ export interface Tx {
   rec?: { id: string; i: number };
   /** 由分期規則產生 */
   inst?: { id: string; i: number; n: number; total?: number };
+  /**
+   * 信用卡對帳：已對上哪一份帳單的哪一行（"卡片:起日~迄日#行"），
+   * 或 "next" 表示使用者標成下期才入帳。舊資料沒有這個欄位。
+   */
+  rc?: string;
   /** 多筆群組：同一次記帳（例如同一張發票）的多筆記錄共用的群組 id；舊資料沒有這個欄位 */
   grp?: string;
   /** 資料來源，例如 "moze" 表示從 MOZE 匯入 */

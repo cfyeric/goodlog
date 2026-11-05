@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildItems, findCloseDate, guessHeader, guessMap, initSecMap, matchStatement, parseAmountCell, parseCSV, parseDateCell } from "../src/core/statement";
+import { buildItems, findCloseDate, guessHeader, guessMap, initSecMap, markNext, matchStatement, mergeGroup, parseAmountCell, parseCSV, parseDateCell, reconcile, stmtKey } from "../src/core/statement";
 import { aliasKey, findAlias, learnAlias } from "../src/core/alias";
 import { CARDS, ledger, settings, tx } from "./helpers";
 
@@ -112,5 +112,75 @@ describe("商家對照", () => {
     const s2 = settings({ aliases: a });
     expect(findAlias(s2, "uber trip 99")?.catId).toBe("c1");
     expect(learnAlias(s2, "UBER *TRIP", { catId: "c1", merchant: "Uber" }, "y")).toBeNull();
+  });
+});
+
+describe("帳單比對：多筆、手動對應、已對帳、下期入帳", () => {
+  const C = (p: Partial<Parameters<typeof tx>[0]>) => tx({ pay: "card", cardId: "C", ...p });
+  const it0 = (date: string, amount: number, desc = "X") => ({ date, desc, amount, sec: "" });
+  const base = { cardId: "C", rejected: new Set<number>(), accepted: new Set<number>() };
+
+  it("多筆群組拿整組合計比對", () => {
+    const l = ledger([C({ id: "a", date: "2026-08-26", amount: 9350, grp: "g" }), C({ id: "b", date: "2026-08-26", amount: 2230, grp: "g" }), C({ id: "c", date: "2026-08-26", amount: 2040, grp: "g" })], { cards: CARDS });
+    const m = matchStatement(l, { ...base, items: [it0("2026-08-27", 13620, "RAPHA")] })!;
+    expect(m.res[0].kind).toBe("ok");
+    expect(m.res[0].via).toBe("group");
+    expect(m.res[0].txs!.map((t) => t.id)).toEqual(["a", "b", "c"]);
+    expect(m.extra).toEqual([]);
+  });
+
+  it("沒有群組時：找同一天幾筆加起來等於帳單金額，列為建議，仍算漏記", () => {
+    const l = ledger([C({ id: "a", date: "2026-08-26", amount: 9350 }), C({ id: "b", date: "2026-08-26", amount: 2230 }), C({ id: "c", date: "2026-08-26", amount: 2040 }), C({ id: "d", date: "2026-08-26", amount: 154 })], { cards: CARDS });
+    const m = matchStatement(l, { ...base, items: [it0("2026-08-27", 13620)] })!;
+    expect(m.res[0].kind).toBe("missing");
+    expect(m.res[0].combo!.map((t) => t.id).sort()).toEqual(["a", "b", "c"]);
+    const m2 = matchStatement(l, { ...base, items: [it0("2026-08-27", 13620)], noCombo: new Set([0]) })!;
+    expect(m2.res[0].combo).toBeUndefined();
+  });
+
+  it("把幾筆合成群組後，下次直接對上", () => {
+    const l = ledger([C({ id: "a", date: "2026-08-26", amount: 100, time: "19:57", merchant: "Rapha" }), C({ id: "b", date: "2026-08-26", amount: 50, time: "20:10" })], { cards: CARDS });
+    const ch = mergeGroup(l, l.months["2026-08"].items, "g1");
+    expect(ch["2026-08"].map((t) => [t.grp, t.time, t.merchant])).toEqual([
+      ["g1", "19:57", "Rapha"],
+      ["g1", "19:57", "Rapha"],
+    ]);
+    const l2 = { ...l, months: { "2026-08": { items: ch["2026-08"] } } };
+    expect(matchStatement(l2, { ...base, items: [it0("2026-08-26", 150)] })!.res[0].via).toBe("group");
+  });
+
+  it("手動對應：金額、日期差很多也算對上", () => {
+    const l = ledger([C({ id: "a", date: "2026-08-01", amount: 500 })], { cards: CARDS });
+    const m = matchStatement(l, { ...base, items: [it0("2026-08-20", 530), it0("2026-08-25", 10)], links: { 0: ["a"] } })!;
+    expect([m.res[0].kind, m.res[0].tx?.id, m.res[0].via]).toEqual(["ok", "a", "link"]);
+  });
+
+  it("完成對帳記下 rc；重新匯入同一份照樣對上，別份帳單不再拿來比", () => {
+    const l = ledger([C({ id: "a", date: "2026-08-10", amount: 300 })], { cards: CARDS });
+    const items = [it0("2026-08-10", 300), it0("2026-08-20", 20)];
+    const key = stmtKey("C", items);
+    const m = matchStatement(l, { ...base, items, key })!;
+    const rc = reconcile(l, key, m.res);
+    expect(rc.n).toBe(1);
+    expect(rc.months["2026-08"][0].rc).toBe(key + "#0");
+    const l2 = { ...l, months: { "2026-08": { items: rc.months["2026-08"] } } };
+    expect(matchStatement(l2, { ...base, items, key })!.res[0].via).toBe("rc");
+    const other = [it0("2026-08-10", 300), it0("2026-08-12", 5)];
+    const m3 = matchStatement(l2, { ...base, items: other, key: stmtKey("C", other) })!;
+    expect(m3.res[0].kind).toBe("missing");
+  });
+
+  it("下期入帳：不在這期列表；下一期不管日期多早都會拿來比", () => {
+    const l = ledger([C({ id: "a", date: "2026-08-28", amount: 90 })], { cards: CARDS });
+    const aug = [it0("2026-08-01", 10), it0("2026-08-29", 20)];
+    expect(matchStatement(l, { ...base, items: aug, key: stmtKey("C", aug) })!.extra.map((t) => t.id)).toEqual(["a"]);
+    const ch = markNext(l, l.months["2026-08"].items[0], true);
+    const l2 = { ...l, months: { "2026-08": { items: ch["2026-08"] } } };
+    const m = matchStatement(l2, { ...base, items: aug, key: stmtKey("C", aug) })!;
+    expect(m.extra).toEqual([]);
+    expect(m.carried.map((t) => t.id)).toEqual(["a"]);
+    const oct = [it0("2026-10-01", 50), it0("2026-10-15", 90)];
+    const m2 = matchStatement(l2, { ...base, items: oct, key: stmtKey("C", oct), links: { 1: ["a"] } })!;
+    expect(m2.res[1].tx?.id).toBe("a");
   });
 });
