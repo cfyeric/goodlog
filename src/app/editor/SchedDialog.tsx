@@ -11,13 +11,13 @@ const WDN = ["日", "一", "二", "三", "四", "五", "六"];
 type NumKey = "dom" | "moy" | "every" | "startIdx" | "count" | "instN" | "rate";
 const NUM_ID: Record<NumKey, string> = { dom: "sc-dom", moy: "sc-moy", every: "sc-every", startIdx: "sc-start", count: "sc-count", instN: "sc-inst", rate: "sc-rate" };
 
-export function SchedDialog({ d, s, init, today, onCancel, onOk }: { d: Draft; s: Settings; init: SchedDraft; today: string; onCancel: () => void; onOk: (D: SchedDraft) => void }) {
+export function SchedDialog({ d, s, init, today, onCancel, onOk, ruleEdit }: { d: Draft; s: Settings; init: SchedDraft; today: string; onCancel: () => void; onOk: (D: SchedDraft) => void; /** 從排程清單編輯週期規則 */ ruleEdit?: boolean }) {
   const [D, setD] = useState<SchedDraft>(init);
   const [err, setErr] = useState("");
   const set = (p: Partial<SchedDraft>) => setD((x) => ({ ...x, ...p }));
   const t = d.t;
   const isExp = t.type === "expense";
-  const EDR = d.orig && recRuleOf(s, d.orig);
+  const EDR = ruleEdit || (d.orig && recRuleOf(s, d.orig));
   const tabs: [SchedDraft["kind"], string][] = [
     ["once", EDR ? "不再重複" : "單次"],
     ["recur", "週期"],

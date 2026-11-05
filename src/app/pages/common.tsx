@@ -11,6 +11,7 @@ import { useApp } from "../state";
 import { useNav } from "../nav";
 import { Ic, Seal, UiIcon } from "../ui/Icon";
 import { TxRow } from "../ui/TxRow";
+import { useOverlay } from "../editor/context";
 
 /** 帳戶頁和專案頁的頁首：切換月份，右邊是新增按鈕 */
 export function MonthHead({ title, onAdd, addLabel }: { title: string; onAdd: () => void; addLabel: string }) {
@@ -237,6 +238,7 @@ export function BudgetRow({ b, name, onChange }: { b?: Budget; name: string; onC
 /** 週期與分期排程清單 */
 export function RecursCard() {
   const { ledger, setSettings, toast } = useApp();
+  const { openEditor } = useOverlay();
   const { nav, arm } = useNav();
   if (!ledger) return null;
   const s = ledger.settings;
@@ -256,7 +258,7 @@ export function RecursCard() {
             const nm = r.tpl.name || "";
             return (
               <div className="setrow" style={{ justifyContent: "space-between" }} key={r.id}>
-                <span style={{ minWidth: 0, flex: 1 }}>
+                <button className="alrow" aria-label={`編輯排程「${r.tpl.name || (c ? c.name : "未分類")}」`} onClick={() => openEditor({ tx: null, rule: r.id })}>
                   <span style={{ display: "block", fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {r.tpl.name || (c ? c.name : "未分類")}{" "}
                     <b className="num" style={{ fontWeight: 600 }}>
@@ -267,7 +269,7 @@ export function RecursCard() {
                   <span style={{ display: "block", fontSize: 12, color: "var(--muted)" }}>
                     {schedText({ ...r, instN: r.count })} · 已記 {r.done || 0} 筆{nx ? " · 下次 " + +nx.slice(5, 7) + "/" + +nx.slice(8, 10) : " · 已結束"}
                   </span>
-                </span>
+                </button>
                 <button
                   className={"del ib-del" + (nav.armed === k ? " arm" : "")}
                   data-armable
@@ -286,7 +288,7 @@ export function RecursCard() {
           })}
         </div>
       ) : (
-        <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--muted)" }}>記帳時在「週期」選延後入帳或提醒入帳的排程，會出現在這裡。刪除只會停止之後的入帳，已記的保留。</p>
+        <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--muted)" }}>記帳時在「週期」選延後入帳或提醒入帳的排程，會出現在這裡。點一下可以修改，刪除只會停止之後的入帳，已記的保留。</p>
       )}
     </div>
   );
