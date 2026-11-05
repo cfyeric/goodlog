@@ -6,9 +6,10 @@ import { formatMoney, r2 } from "../../core/money";
 import { uid8 } from "../../core/ids";
 import { postBase, ruleMode } from "../../core/recurrence";
 import { recurHint, schedText } from "../../core/recurrenceText";
+import { normRule, occAt } from "../../core/recurrence";
 import {
   applyKey, catPath, confirmDraft, dateLabel, deleteGroup, deleteTx, evalExpr, KEYMAP, newDraft, planSummary, quickAmounts,
-  recRuleOf, saveDraft, saveTransfer, stopRule, suggestCats, type Draft, type PadKey, type SchedDraft, applySched, schedOpen, SAVE_ACC,
+  recRuleOf, ruleDraft, saveDraft, saveRule, saveTransfer, stopRule, suggestCats, type Draft, type PadKey, type SchedDraft, applySched, schedOpen, SAVE_ACC,
   addToGroup, deleteTxs, groupMembers, saveGroup, syncShared,
 } from "../../core/editor";
 import { useApp } from "../state";
@@ -48,7 +49,7 @@ export function EditorHost() {
   if (!editor || !ledger) return null;
   return (
     <div id="sheetRoot">
-      <EditorSheet key={(editor.tx?.id || "new") + (editor.confirmPending ? "c" : "")} req={editor} ledger={ledger} />
+      <EditorSheet key={(editor.rule ? "rule:" + editor.rule : editor.tx?.id || "new") + (editor.confirmPending ? "c" : "")} req={editor} ledger={ledger} />
     </div>
   );
 }
@@ -58,7 +59,11 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
   const { nav, go } = useNav();
   const { closeEditor } = useOverlay();
   const s = ledger.settings;
+  // 編輯排程：規則本身（不是某一筆記錄）
+  const rule0 = req.rule ? (s.recurs || []).find((x) => x.id === req.rule) || null : null;
+  const rule = rule0 ? normRule(rule0) : null;
   const [d, setD] = useState<Draft>(() => {
+    if (rule) return ruleDraft(rule, uid8());
     const base = req.confirmPending && req.tx ? confirmDraft(ledger, req.tx, uid8(), new Date()) : newDraft(ledger, req.tx, { date: req.date || nav.sel, now: new Date(), id: uid8() });
     if (req.prefill) {
       base.t = { ...base.t, ...req.prefill.t };
@@ -81,9 +86,9 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
   const grpOrig = gp.origs.length > 1;
   const [u, setU] = useState<UiState>(() => ({
     tab: null,
-    group: req.tx ? findCategory(s, req.tx.catId)?.groupId || null : req.prefill?.t.catId ? findCategory(s, req.prefill.t.catId)?.groupId || null : null,
-    collapsed: req.confirmPending ? true : !!(req.tx?.catId || req.prefill?.t.catId),
-    padTarget: req.tx && !req.confirmPending ? null : "amount",
+    group: rule ? findCategory(s, rule.tpl.catId)?.groupId || null : req.tx ? findCategory(s, req.tx.catId)?.groupId || null : req.prefill?.t.catId ? findCategory(s, req.prefill.t.catId)?.groupId || null : null,
+    collapsed: rule ? !!findCategory(s, rule.tpl.catId) : req.confirmPending ? true : !!(req.tx?.catId || req.prefill?.t.catId),
+    padTarget: rule || (req.tx && !req.confirmPending) ? null : "amount",
     padClosing: null,
     feeDlg: null,
     err: "",
@@ -116,7 +121,7 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
   let tab = u.tab;
   if (isSave) tab = "save";
   else {
-    if (!tab || tab === "save" || (tab === "sug" && !sug.length)) tab = !d.orig && sug.length ? "sug" : t.type === "income" ? "income" : "expense";
+    if (!tab || tab === "save" || (tab === "sug" && !sug.length)) tab = !d.orig && !rule && sug.length ? "sug" : t.type === "income" ? "income" : "expense";
     if (tab !== "sug" && tab !== t.type) tab = t.type === "income" ? "income" : "expense";
   }
   const gList = (s.groups || []).filter((g) => g.type === t.type && cs.some((c) => c.groupId === g.id));
@@ -132,7 +137,7 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
   const total = t.type === "expense" ? val + fee - dis : t.type === "income" ? val - fee : val;
   const PT = u.padTarget;
   const RR = d.orig ? recRuleOf(s, d.orig) : null;
-  const canAdd = !isSave && !d.confirmPending && !d.mode && !(d.orig && (d.orig.rec || d.orig.inst)) && !d.fromImp;
+  const canAdd = !rule && !isSave && !d.confirmPending && !d.mode && !(d.orig && (d.orig.rec || d.orig.inst)) && !d.fromImp;
 
   /* ---------- 鍵盤 ---------- */
   const openPad = (k: PadTarget) => {
@@ -257,6 +262,19 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
 
   /* ---------- 動作 ---------- */
   const save = () => {
+    if (rule) {
+      if (!canWrite()) return;
+      const res = saveRule(ledger, rule.id, d, uid8);
+      if (!res.ok) {
+        ui({ err: res.err, ...(res.openPad ? { padTarget: "amount" as const, padClosing: null } : {}) });
+        toast(res.err);
+        return;
+      }
+      commit({ settings: res.settings });
+      closeEditor();
+      toast(res.msg);
+      return;
+    }
     if (isSave && !canWrite()) return;
     if (!isSave && useGroup) {
       const res = saveGroup(ledger, items, gp.origs, t, uid8, storeMode === "readonly");
@@ -293,6 +311,12 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
     commit({ months: deleteTx(ledger, d.orig) });
     closeEditor();
     toast("已刪除");
+  };
+  const delRule = () => {
+    if (!arm("rule") || !rule || !canWrite()) return;
+    commit({ settings: stopRule(s, rule.id) });
+    closeEditor();
+    toast("已刪除排程，已記的記錄保留");
   };
   const delGrp = () => {
     if (!arm("grpall") || !gp.origs.length) return;
@@ -360,7 +384,27 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
 
   /* ---------- 週期欄位 ---------- */
   let schedField: ReactNode = null;
-  if (d.orig && RR) {
+  if (rule) {
+    const nx = (rule.done || 0) < (rule.count ? rule.count - (rule.startIdx || 1) + 1 : Infinity) ? occAt(rule, rule.done || 0) : null;
+    schedField = (
+      <div className="field full">
+        <label htmlFor="f-sched">排程</label>
+        {rule.kind === "recur" ? (
+          <button type="button" id="f-sched" className="fakein" style={{ height: "auto", minHeight: 36, whiteSpace: "normal" }} onClick={() => ui({ sched: schedOpen(s, d) })}>
+            {d.mode && d.mode.kind === "recur" ? schedText(d.mode) : "不再重複（停在已記的那筆）"}
+          </button>
+        ) : (
+          <div className="fakein" id="f-sched" style={{ height: "auto", minHeight: 36, whiteSpace: "normal" }}>
+            {schedText({ ...rule, instN: rule.count })}
+          </div>
+        )}
+        <span className="pkhint" style={{ margin: "2px 0 0" }}>
+          已記 {rule.done || 0} 筆{nx ? `，下次 ${+nx.slice(5, 7)}/${+nx.slice(8, 10)}` : "，已結束"}。修改只影響之後自動記的，已經記的不會變。
+          {rule.kind === "inst" ? "分期的金額和期數由分期計畫決定，這裡不能改。" : ""}
+        </span>
+      </div>
+    );
+  } else if (d.orig && RR) {
     const cur = d.schedTouched ? (d.mode && d.mode.kind === "recur" ? d.mode : null) : ruleMode(RR, d.orig.rec!.i);
     const sc = d.scope;
     schedField = (
@@ -465,7 +509,7 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
             </button>
           )}
           <h2>
-            {d.confirmPending ? "確認入帳" : d.orig || gp.origs.length ? "編輯記錄" : "記一筆"}
+            {rule ? "編輯排程" : d.confirmPending ? "確認入帳" : d.orig || gp.origs.length ? "編輯記錄" : "記一筆"}
             {multi ? <small className="grpn">{items.length} 筆 · 合計 {formatMoney(Math.abs(groupSum))}</small> : null}
           </h2>
           <button className="iconbtn okbtn" aria-label="儲存" onClick={save}>
@@ -473,8 +517,8 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
           </button>
         </div>
         {colC ? null : (
-          <div className={"ttabs" + (["", "", " two", " three", " four"][(sug.length ? 1 : 0) + (multi || grpOrig ? 2 : 3)])} role="tablist">
-            {((sug.length ? [["sug", "建議"]] : []) as [string, string][]).concat([["expense", "支出"], ["income", "收入"]], multi || grpOrig ? [] : [["save", "儲蓄"]]).map(([k, l]) => (
+          <div className={"ttabs" + (["", "", " two", " three", " four"][(sug.length ? 1 : 0) + (multi || grpOrig || rule ? 2 : 3)])} role="tablist">
+            {((sug.length ? [["sug", "建議"]] : []) as [string, string][]).concat([["expense", "支出"], ["income", "收入"]], multi || grpOrig || rule ? [] : [["save", "儲蓄"]]).map(([k, l]) => (
               <button key={k} className={tab === k ? "on" : ""} role="tab" aria-selected={tab === k} onClick={() => chooseType(k as "sug")}>
                 {k === "sug" ? <Ic name="sparkles" /> : null}
                 {l}
@@ -570,14 +614,14 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
             />
           )}
           <div className="amtrow">
-            <button className={"amtbox" + (PT === "amount" ? " on" : "")} aria-label="輸入金額" onClick={() => PT !== "amount" && openPad("amount")}>
+            <button className={"amtbox" + (PT === "amount" ? " on" : "")} aria-label="輸入金額" disabled={rule?.kind === "inst"} onClick={() => PT !== "amount" && openPad("amount")}>
               <span className="cur">TWD</span>
               <span className="expr">
                 {showExpr ? <small className="num">{d.ex.amount}</small> : null}
                 <b style={{ color: isSave ? "var(--hp-save-t)" : t.type === "income" ? "var(--inc)" : "var(--exp)" }}>{fee || dis ? r2(total).toLocaleString("zh-TW") : val ? val.toLocaleString("zh-TW") : "0"}</b>
               </span>
             </button>
-            {isSave ? null : <button
+            {isSave || rule?.kind === "inst" ? null : <button
               type="button"
               className={"amtplus" + (fee || dis ? " has" : "")}
               aria-label="手續費與折扣"
@@ -623,14 +667,14 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
                 {opt((s.projects || []).filter((p) => !p.archived || p.id === t.projectId), "無專案")}
               </select>
             </div>}
-            <div className="field">
+            {rule && !(rule.kind === "once" && !rule.done) ? null : <div className="field">
               <label htmlFor="f-date">日期</label>
               <button type="button" id="f-date" className="datebtn" onClick={() => ui({ dp: true })}>
                 <span>{dl.main}</span>
                 <small>{dl.wd}</small>
               </button>
-            </div>
-            <div className="field">
+            </div>}
+            <div className={"field" + (rule && !(rule.kind === "once" && !rule.done) ? " full" : "")}>
               <label htmlFor="f-time">時間</label>
               <input id="f-time" type="time" value={t.time || ""} onChange={(e) => setT({ time: e.target.value })} />
             </div>
@@ -688,7 +732,7 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
                 (document.activeElement as HTMLElement | null)?.blur?.();
               }}
             />}
-            {isSave || useGroup ? null : schedField}
+            {isSave || (useGroup && !rule) ? null : schedField}
             {isSave ? null : <div className="field full">
               <label htmlFor="f-inv">發票號碼</label>
               <input id="f-inv" type="search" enterKeyHint="done" autoComplete="off" placeholder="發票號碼" value={t.invoice || ""} onChange={(e) => setT({ invoice: e.target.value })} />
@@ -715,6 +759,11 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
           <div className="err" id="err" role="alert">
             {u.err}
           </div>
+          {rule ? (
+            <button className={"danger" + (u.armed === "rule" ? " arm" : "")} onClick={delRule}>
+              {u.armed === "rule" ? "再按一次，刪除這個排程" : "刪除這個排程（已記的保留）"}
+            </button>
+          ) : null}
           {grpOrig ? (
             <button className={"danger" + (u.armed === "grpall" ? " arm" : "")} onClick={delGrp}>
               {u.armed === "grpall" ? "再按一次，刪除整組" : `刪除整組（${gp.origs.length} 筆）`}
@@ -866,7 +915,14 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
           init={u.sched}
           today={today}
           onCancel={() => ui({ sched: null })}
+          ruleEdit={!!rule}
           onOk={(D) => {
+            if (rule) {
+              const { raw: _raw, ...m } = D;
+              setD((x) => ({ ...x, schedTouched: true, mode: D.kind === "recur" ? m : { kind: "once" } }));
+              ui({ sched: null });
+              return;
+            }
             setD((x) => applySched(s, x, D));
             ui({ sched: null });
           }}

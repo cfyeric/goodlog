@@ -9,6 +9,8 @@ export interface EditorRequest {
   confirmPending?: boolean;
   /** 新增時預設的日期 */
   date?: string;
+  /** 編輯排程（帳戶頁的週期與分期排程）：規則 id */
+  rule?: string;
   /** 新增時預先填好的內容（帳單比對「補記」用） */
   prefill?: { t: Partial<Tx>; ex: Partial<{ amount: string; fee: string; discount: string }>; fromImp?: { desc: string } };
 }

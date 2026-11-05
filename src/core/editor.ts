@@ -3,10 +3,10 @@
  * 跟舊版 legacy/ 的 openEditor、evalExpr、saveTx 等行為相同。
  */
 import type { Category, DateStr, Ledger, Months, Rule, Settings, Tx } from "./types";
-import { pad, pd, ymd } from "./dates";
+import { addDays, pad, pd, ymd } from "./dates";
 import { allTx, cardOf, findCategory, findGroup, findProject, payOf } from "./ledger";
 import { formatMoney, net, r2 } from "./money";
-import { buildPlan, makeOcc, nOcc, occAt, postBase, recurStart, ruleMode, wdSet, type PlanOptions, type ScheduleMode } from "./recurrence";
+import { buildPlan, makeOcc, nOcc, normRule, occAt, postBase, recurStart, ruleMode, wdSet, type PlanOptions, type ScheduleMode } from "./recurrence";
 import { learnAlias } from "./alias";
 
 /* ---------- 算式與數字鍵盤 ---------- */
@@ -577,6 +577,102 @@ export function saveDraft(L: Ledger, d: Draft, today: DateStr, newId: () => stri
   months[nk] = monthOf(nk).filter((x) => x.id !== cleanTx.id).concat([cleanTx]);
   const msg = recMsg || (d.confirmPending ? "已入帳 " + formatMoney(net(cleanTx)) : d.orig ? "已更新" : "已記下 " + formatMoney(net(cleanTx)));
   return { ok: true, months, settings: settings !== L.settings ? settings : undefined, msg, sel: cleanTx.date };
+}
+
+/* ---------- 編輯排程（帳戶頁的週期與分期排程） ---------- */
+
+/** 排程的下一期（還沒記的那一期）；全部記完就用最後一期 */
+function nextIdx(r: Rule): number {
+  const N = nOcc(r);
+  const d = r.done || 0;
+  return N === Infinity || d < N ? d : Math.max(0, N - 1);
+}
+
+/** 打開排程編輯：用下一期的內容當草稿，週期排程帶出目前的週期設定 */
+export function ruleDraft(r0: Rule, id: string): Draft {
+  const r = normRule(r0);
+  const j = nextIdx(r);
+  const o = makeOcc(r, j);
+  const t: Tx = { ...o, id };
+  delete t.rec;
+  delete t.inst;
+  delete t.pending;
+  if (t.type === "expense" && t.pay !== "card") t.pay = "cash";
+  return {
+    orig: null,
+    t,
+    ex: { amount: String(o.amount || ""), fee: o.fee ? String(o.fee) : "", discount: o.discount ? String(o.discount) : "" },
+    mode: r.kind === "recur" ? ruleMode(r, (r.startIdx || 1) + j) : null,
+    scope: "one",
+    schedTouched: false,
+    confirmPending: false,
+  };
+}
+
+/**
+ * 存排程的修改，只影響之後自動記的，已經記的不變。
+ * - 名稱、類別、金額、付款、專案等：改規則的範本（分期不改金額，金額由分期計畫決定）
+ * - 單次排程：日期改成草稿上的日期（還沒記才可以改）
+ * - 週期排程改了週期：還沒記過就直接改；記過的話，舊規則停在已記的那期，從下一期起用新規則
+ *   （舊記錄的 id 是「規則id-期數」，不能動）
+ * - 週期改成「不再重複」：停在已記的那期
+ */
+export function saveRule(L: Ledger, rid: string, d: Draft, newId: () => string): SaveResult {
+  const r0 = (L.settings.recurs || []).find((x) => x.id === rid);
+  if (!r0) return { ok: false, err: "找不到這個排程，可能已經被刪除。" };
+  const r = normRule(r0);
+  const cr = cleanDraft(d);
+  if (!cr.ok) return cr;
+  const t = cr.tx;
+  const F = ["type", "amount", "fee", "discount", "time", "catId", "name", "merchant", "pay", "cardId", "projectId", "tags", "note", "invoice"] as const;
+  const tpl: Partial<Tx> = { ...r.tpl };
+  for (const f of F) {
+    if (r.kind === "inst" && (f === "amount" || f === "fee" || f === "discount")) continue;
+    if (t[f] === undefined || t[f] === "" || (Array.isArray(t[f]) && !(t[f] as unknown[]).length)) delete (tpl as Record<string, unknown>)[f];
+    else (tpl as Record<string, unknown>)[f] = clone(t[f]);
+  }
+  if (tpl.type !== "expense") {
+    delete tpl.pay;
+    delete tpl.cardId;
+  }
+  const done = r.done || 0;
+  let nr: Rule = { ...r0, tpl };
+  const extra: Rule[] = [];
+  let msg = "已更新排程，之後自動記的會照新內容";
+  if (r.kind === "once" && !done && t.date !== occAt(r, 0)) nr.start = t.date;
+  if (r.kind === "recur" && d.schedTouched) {
+    const M = d.mode;
+    const lastDone = done ? occAt(r, done - 1) : null;
+    if (!M || M.kind !== "recur") {
+      if (!done) return { ok: false, err: "這個排程還沒記過任何一筆，要停止的話請直接刪除。" };
+      nr.count = (r.startIdx || 1) - 1 + done;
+      msg = `已停止，這個排程到第 ${done} 筆為止`;
+    } else {
+      const base = postBase(M, lastDone ? addDays(lastDone, 1) : r.start);
+      const sched: Partial<Rule> = {
+        every: M.every || 1,
+        unit: M.unit || "month",
+        dom: M.unit === "month" || M.unit === "year" ? +(M.dom ?? 0) || null : null,
+        moy: M.unit === "year" ? +(M.moy ?? 0) : null,
+        dow: M.unit === "week" ? +(M.dow ?? 0) : null,
+        wdays: M.unit === "day" ? wdSet(M) : null,
+        workday: M.unit === "day" && wdSet(M) ? "same" : M.workday || "same",
+        post: M.post || "due",
+      };
+      sched.start = recurStart({ ...M, ...sched }, base);
+      if (!done) {
+        nr = { ...nr, ...sched, kind: "recur", startIdx: 1, count: M.count || 0, done: 0 };
+        delete nr.legacy;
+        delete (nr as Rule & { freq?: string }).freq;
+      } else {
+        nr.count = (r.startIdx || 1) - 1 + done;
+        extra.push({ id: "r" + newId(), kind: "recur", ...sched, startIdx: 1, count: M.count || 0, grace: 0, tpl: clone(tpl), done: 0 } as Rule);
+        msg = "已更新排程，從下一期開始用新的週期";
+      }
+    }
+  }
+  const recurs = (L.settings.recurs || []).flatMap((x) => (x.id === rid ? [nr, ...extra] : [x]));
+  return { ok: true, months: {}, settings: { ...L.settings, recurs }, msg, sel: null };
 }
 
 /* ---------- 多筆群組 ---------- */
