@@ -1,5 +1,5 @@
 /** 設定頁：商家對照、類別入口、備份與匯出、還原、從 MOZE 匯入 */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CHANGELOG } from "../changelog";
 import type { Ledger } from "../../core/types";
 import { findCategory } from "../../core/ledger";
@@ -7,7 +7,7 @@ import { backupJSON, exportCSV, parseBackup, restoreMonths, stamp, type RestoreP
 import { useApp } from "../state";
 import { useNav } from "../nav";
 import { useOverlay } from "../editor/context";
-import { Ic } from "../ui/Icon";
+import { Ic, UiIcon } from "../ui/Icon";
 import { useAccount } from "../auth/AuthGate";
 
 interface Downloads {
@@ -63,27 +63,6 @@ export function Settings({ ledger }: { ledger: Ledger }) {
   const [restore, setRestore] = useState<(RestorePreview & { name: string }) | null>(null);
   const account = useAccount();
 
-  const delAlias = (id: string, nm: string) => {
-    const k = "aliases:" + id;
-    const on = nav.armed === k;
-    return (
-      <button
-        className={"del ib-del" + (on ? " arm" : "")}
-        data-armable
-        aria-label={(on ? "再按一次確定刪除" : "刪除") + (nm ? "「" + nm + "」" : "")}
-        title={on ? "再按一次確定刪除" : "刪除"}
-        onClick={() => {
-          if (!arm(k) || !canWrite()) return;
-          setSettings((x) => ({ ...x, aliases: (x.aliases || []).filter((a) => a.id !== id) }));
-          go({ armed: null });
-          toast("已刪除");
-        }}
-      >
-        <Ic name="trash-2" />
-      </button>
-    );
-  };
-
   const doRestore = async () => {
     const R = restore;
     if (!R || !canWrite()) return;
@@ -109,27 +88,13 @@ export function Settings({ ledger }: { ledger: Ledger }) {
         </h1>
       </div>
       <div className="stack" style={{ marginTop: 6 }}>
-        <div className="card">
+        <div className="card" style={{ padding: "12px 16px 4px" }}>
           <div className="lbl-s">商家對照</div>
-          {aliases.length ? (
-            <div className="rows">
-              {aliases.map((a) => (
-                <div key={a.id} className="setrow" style={{ justifyContent: "space-between" }}>
-                  <span style={{ minWidth: 0, flex: 1 }}>
-                    <span style={{ display: "block", fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.desc}</span>
-                    <span style={{ display: "block", fontSize: 12, color: "var(--muted)" }}>
-                      → {findCategory(s, a.catId)?.name || "（類別已刪除）"}
-                      {a.name ? " · " + a.name : ""}
-                      {a.merchant ? " · " + a.merchant : ""}
-                    </span>
-                  </span>
-                  {delAlias(a.id, a.desc)}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--muted)" }}>帳單比對時按「補記」或「是同一筆」，會自動記住帳單名稱對應的類別，下次直接帶入。</p>
-          )}
+          <button className="navrow" onClick={() => view("aliases")}>
+            <span>帳單說明對應的類別</span>
+            <small>{aliases.length ? aliases.length + " 筆" : "還沒有"}</small>
+            <Ic name="chevron-right" />
+          </button>
         </div>
         <div className="card" style={{ padding: "12px 16px 4px" }}>
           <div className="lbl-s">類別</div>
@@ -246,6 +211,71 @@ export function Settings({ ledger }: { ledger: Ledger }) {
           </button>
         </div>
         <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 2px" }}>資料存在你的雲端帳本，只有你看得到。</p>
+      </div>
+    </>
+  );
+}
+
+/** 設定 → 商家對照：帳單說明對應到的類別、名稱、商家，可以刪除 */
+export function Aliases({ ledger }: { ledger: Ledger }) {
+  const s = ledger.settings;
+  const { setSettings, canWrite, toast } = useApp();
+  const { nav, go, view, arm } = useNav();
+  useEffect(() => window.scrollTo(0, 0), []);
+  const delAlias = (id: string, nm: string) => {
+    const k = "aliases:" + id;
+    const on = nav.armed === k;
+    return (
+      <button
+        className={"del ib-del" + (on ? " arm" : "")}
+        data-armable
+        aria-label={(on ? "再按一次確定刪除" : "刪除") + (nm ? "「" + nm + "」" : "")}
+        title={on ? "再按一次確定刪除" : "刪除"}
+        onClick={() => {
+          if (!arm(k) || !canWrite()) return;
+          setSettings((x) => ({ ...x, aliases: (x.aliases || []).filter((a) => a.id !== id) }));
+          go({ armed: null });
+          toast("已刪除");
+        }}
+      >
+        <Ic name="trash-2" />
+      </button>
+    );
+  };
+
+  const aliases = s.aliases || [];
+  return (
+    <>
+      <div className="top">
+        <button className="iconbtn" aria-label="返回設定" onClick={() => view("settings")}>
+          <UiIcon name="left" />
+        </button>
+        <h1>
+          商家對照<small>帳單比對時學起來的對應，共 {aliases.length} 筆</small>
+        </h1>
+      </div>
+      <div className="stack" style={{ marginTop: 6 }}>
+        <div className="card">
+                    {aliases.length ? (
+            <div className="rows">
+              {aliases.map((a) => (
+                <div key={a.id} className="setrow" style={{ justifyContent: "space-between" }}>
+                  <span style={{ minWidth: 0, flex: 1 }}>
+                    <span style={{ display: "block", fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{a.desc}</span>
+                    <span style={{ display: "block", fontSize: 12, color: "var(--muted)" }}>
+                      → {findCategory(s, a.catId)?.name || "（類別已刪除）"}
+                      {a.name ? " · " + a.name : ""}
+                      {a.merchant ? " · " + a.merchant : ""}
+                    </span>
+                  </span>
+                  {delAlias(a.id, a.desc)}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={{ margin: "4px 0 0", fontSize: 13, color: "var(--muted)" }}>帳單比對時按「補記」或「是同一筆」，會自動記住帳單名稱對應的類別，下次直接帶入。</p>
+          )}
+        </div>
       </div>
     </>
   );
