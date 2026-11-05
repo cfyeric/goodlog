@@ -252,6 +252,8 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
     const v = evalExpr(x.ex.amount), f = evalExpr(x.ex.fee), di = evalExpr(x.ex.discount);
     return x.t.type === "expense" ? v + f - di : v - f;
   };
+  // 合計圖示的名稱：商家（整組共用，等於第一筆的商家），沒填就叫「多類別」
+  const sumName = (t.merchant || "").trim() || "多類別";
   const groupSum = items.reduce((a, x) => a + (x.t.type === "income" ? -amtOf(x) : amtOf(x)), 0);
 
   /* ---------- 動作 ---------- */
@@ -502,11 +504,11 @@ function EditorSheet({ req, ledger }: { req: EditorRequest; ledger: Ledger }) {
             <div className={"catpick grpchips" + (multi ? " multi" : "")}>
               {multi ? (
                 <>
-                  <span className="cat sum" aria-label={`多類別，共 ${items.length} 筆，合計 ${formatMoney(Math.abs(groupSum))}`}>
+                  <span className="cat sum" aria-label={`${sumName}，共 ${items.length} 筆，合計 ${formatMoney(Math.abs(groupSum))}`}>
                     <span className="seal">
                       <Svg node={FOLDER} />
                     </span>
-                    <span>多類別</span>
+                    <span className="sumname">{sumName}</span>
                     <small className="num">{formatMoney(Math.abs(groupSum))}</small>
                   </span>
                   <span className="gsep" aria-hidden="true" />
