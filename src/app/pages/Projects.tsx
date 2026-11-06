@@ -1,6 +1,6 @@
 /** 專案頁：本月各專案花費、預算、專案設定 */
 import type { Ledger, Project } from "../../core/types";
-import { allTx, findProject } from "../../core/ledger";
+import { allTx, expenseView, findProject } from "../../core/ledger";
 import { formatMoney, net } from "../../core/money";
 import { budgetList, type BudgetStatus } from "../../core/budget";
 import { uid8 } from "../../core/ids";
@@ -35,7 +35,7 @@ export function Projects({ ledger }: { ledger: Ledger }) {
       </>
     );
   const ym = nav.payYm;
-  const exp = (ledger.months[ym]?.items || []).filter((t) => t.type === "expense" && !t.pending);
+  const exp = expenseView(s, (ledger.months[ym]?.items || []).filter((t) => !t.pending)).filter((t) => t.type === "expense");
   const bl: Record<string, BudgetStatus> = {};
   budgetList(ledger, ym).forEach((x) => (bl[x.key] = x));
   const keyOf = (pid?: string) => (pid && findProject(s, pid) ? pid : "_");

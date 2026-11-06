@@ -1,7 +1,7 @@
 import { useMemo, type CSSProperties } from "react";
 import type { Ledger } from "../../core/types";
 import { pd, ymd } from "../../core/dates";
-import { findCategory, pendingList, transfersOfDay, transfersOfMonth, txOfDay } from "../../core/ledger";
+import { countsAsExpense, expenseView, findCategory, pendingList, transfersOfDay, transfersOfMonth, txOfDay } from "../../core/ledger";
 import { formatMoney, net } from "../../core/money";
 import { budgetAlerts, type BudgetStatus } from "../../core/budget";
 import { useApp } from "../state";
@@ -23,7 +23,7 @@ export function Home({ ledger }: { ledger: Ledger }) {
   const [Y, M] = nav.ym.split("-").map(Number);
   const pick = (ds: string) => go({ sel: ds, ym: ds.slice(0, 7) });
   const mItems = (ledger.months[nav.ym]?.items || []).filter((t) => !t.pending && t.type !== "transfer");
-  const mExp = mItems.filter((t) => t.type === "expense").reduce((a, t) => a + net(t), 0);
+  const mExp = expenseView(s, mItems).filter((t) => t.type === "expense").reduce((a, t) => a + net(t), 0);
   const mInc = mItems.filter((t) => t.type === "income").reduce((a, t) => a + net(t), 0);
   // 轉到儲蓄帳戶：另外一條，不算支出
   const mSaves = transfersOfMonth(ledger, nav.ym);
@@ -34,7 +34,7 @@ export function Home({ ledger }: { ledger: Ledger }) {
   // 轉到儲蓄帳戶的轉帳也列在當天明細（不算支出）
   const list = spent.concat(transfersOfDay(ledger, nav.sel)).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
   const sd = pd(nav.sel);
-  const dExp = spent.filter((t) => t.type === "expense").reduce((a, t) => a + net(t), 0);
+  const dExp = expenseView(s, spent).filter((t) => t.type === "expense").reduce((a, t) => a + net(t), 0);
   const mon = (k: number) => {
     const ym = addYm(nav.ym, k);
     go({ ym, sel: ym === today.slice(0, 7) ? today : ym + "-01" });
@@ -111,11 +111,11 @@ function MonthGrid({ ledger, ym, sel, today, onPick }: { ledger: Ledger; ym: str
         if (t.type === "transfer" || t.pending) continue;
         const x = (o[t.date] ||= { e: false, n: false, c: 0 });
         x.c++;
-        if (t.type === "expense") x.e = true;
+        if (countsAsExpense(ledger.settings, t)) x.e = true;
         if (t.type === "income") x.n = true;
       }
     return o;
-  }, [mp, mc, mn]);
+  }, [mp, mc, mn, ledger.settings]);
   const cells = [];
   for (let i = 0; i < 42; i++) {
     const d = new Date(start);

@@ -1,7 +1,7 @@
 /** 報表頁：總覽、類別（圓餅、下鑽）、排行、帳戶、專案 */
 import { useMemo } from "react";
 import type { Group, Ledger, Settings, Tx } from "../../core/types";
-import { allTx, cardOf, findCategory, findGroup, findProject, payOf } from "../../core/ledger";
+import { allTx, cardOf, expenseView, findCategory, findGroup, findProject, payOf } from "../../core/ledger";
 import { formatMoney, net } from "../../core/money";
 import { reportRange, shiftAnchor, type ReportMode } from "../../core/report";
 import { useNav, type Nav, type ReportTab } from "../nav";
@@ -193,7 +193,8 @@ export function Reports({ ledger }: { ledger: Ledger }) {
   const { nav, go } = useNav();
   const s = ledger.settings;
   const r = reportRange(nav.rMode, nav.rAnchor);
-  const all = useMemo(() => allTx(ledger).filter((t) => t.date >= r.s && t.date <= r.e), [ledger, r.s, r.e]);
+  // 加值時算支出的話，加值轉成支出、悠遊卡付的消費拿掉（expenseView）
+  const all = useMemo(() => expenseView(ledger.settings, allTx(ledger).filter((t) => t.date >= r.s && t.date <= r.e)), [ledger, r.s, r.e]);
   return (
     <>
       <div className="top">
