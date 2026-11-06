@@ -2,6 +2,7 @@
 import { Fragment, useMemo } from "react";
 import type { Card, Ledger, Settings } from "../../core/types";
 import { chargeCard, findCard, isSvTx, payOf, svBalance, svChildOf, svParent } from "../../core/ledger";
+import { addDays } from "../../core/dates";
 import { formatMoney, formatSigned, net } from "../../core/money";
 import { budgetList, type BudgetStatus } from "../../core/budget";
 import { uid8 } from "../../core/ids";
@@ -438,12 +439,28 @@ function AccSettings({ ledger, k }: { ledger: Ledger; k: string }) {
               }
             />
           </OptRow>
+          <OptRow label="餘額起算日">
+            <input
+              type="date"
+              className="numin num"
+              style={{ width: "auto" }}
+              aria-label="餘額是哪一天的；這天之後的加值和消費會自動加減"
+              value={c.svDate || ""}
+              max={today}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSettings((st) => updCard(c.id, (x) => (v ? { ...x, svDate: v } : (({ svDate: _d, ...y }) => y as Card)(x)), st));
+              }}
+            />
+          </OptRow>
           <OptRow label="帳本推算餘額">
             <span className="v num">{formatSigned(svBalance(ledger, c, today))}</span>
           </OptRow>
           <BudgetRow b={c} name={c.name} onChange={setBudget} />
         </div>
-        <p className="pkhint">填入卡上實際餘額後，會從那天之後開始用加值和消費推算；對不上時重新填一次就好。</p>
+        <p className="pkhint">
+          「目前卡上餘額」是起算日那天結束時的餘額，{c.svDate ? `${+c.svDate.slice(5, 7)}/${+c.svDate.slice(8, 10)} 之後` : "之後"}的加值和消費會自動加減。填餘額時起算日會自動改成今天；對不上時重新填一次，或調整起算日。
+        </p>
         <button className="addbtn" style={{ width: "100%", height: 40, marginTop: 6 }} onClick={() => openTopup({ cardId: c.id, amount: "500", date: today })}>
           <Ic name="arrow-down-to-line" />
           記一筆加值
@@ -467,10 +484,10 @@ function AccSettings({ ledger, k }: { ledger: Ledger; k: string }) {
     const free = (x: Card) => x.id !== c.id && !x.svOf && !svChildOf(s, x) && !x.archived && /悠遊/.test(x.name);
     const m = cs.find((x) => free(x) && x.name.replace(/悠遊卡?/, "").trim() === c.name.trim()) || cs.find((x) => free(x) && x.name.includes(c.name));
     if (m) {
-      setSettings((st) => updCard(m.id, (x) => ({ ...x, svOf: c.id, svDate: x.svDate || today }), st));
+      setSettings((st) => updCard(m.id, (x) => ({ ...x, svOf: c.id, svDate: x.svDate || addDays(today, -1) }), st));
       toast(`已把「${m.name}」設成 ${c.name} 的悠遊聯名卡`);
     } else {
-      setSettings((st) => ({ ...st, cards: (st.cards || []).concat([{ id: uid8(), name: c.name + " 悠遊卡", svOf: c.id, svDate: today }]) }));
+      setSettings((st) => ({ ...st, cards: (st.cards || []).concat([{ id: uid8(), name: c.name + " 悠遊卡", svOf: c.id, svDate: addDays(today, -1) }]) }));
       toast("已開啟悠遊聯名卡");
     }
   };
@@ -505,7 +522,7 @@ function AccSettings({ ledger, k }: { ledger: Ledger; k: string }) {
                 onChange={(e) => {
                   const nw = findCard(s, e.target.value);
                   if (!nw || nw.id === kid.id) return;
-                  setSettings((st) => updCard(nw.id, (x) => ({ ...x, svOf: c.id, svDate: x.svDate || today }), updCard(kid.id, ({ svOf: _o, ...y }) => y as Card, st)));
+                  setSettings((st) => updCard(nw.id, (x) => ({ ...x, svOf: c.id, svDate: x.svDate || addDays(today, -1) }), updCard(kid.id, ({ svOf: _o, ...y }) => y as Card, st)));
                   toast(`悠遊卡記錄改用「${nw.name}」`);
                 }}
               >
