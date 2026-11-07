@@ -1,6 +1,6 @@
 /** 記一筆／編輯悠遊卡加值 */
 import { useState } from "react";
-import { makeTopup, svParent } from "../../core/ledger";
+import { makeTopup, findCard, svParent } from "../../core/ledger";
 import { uid8 } from "../../core/ids";
 import { useApp } from "../state";
 import { useOverlay } from "./context";
@@ -24,11 +24,14 @@ function TopupDialog() {
   if (!T || !ledger) return null;
   const s = ledger.settings;
   const svs = (s.cards || []).filter((c) => c.svOf && (!c.archived || c.id === T.cardId));
+  // 原本那張卡已經不是悠遊卡（例如改過悠遊聯名卡設定）時，選單和儲存都用第一張悠遊卡，並提示會改過去
+  const cur = svs.some((c) => c.id === card) ? card : svs[0]?.id || "";
+  const oldCard = T.id && T.cardId && !svs.some((c) => c.id === T.cardId) ? findCard(s, T.cardId) : null;
   const close = () => openTopup(null);
   const ok = () => {
     if (!canWrite()) return;
     const a = Math.round((parseFloat(amt) || 0) * 100) / 100;
-    const cid = svs.length ? card || svs[0].id : "";
+    const cid = cur;
     if (!(a > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !cid) return setErr("請填金額、日期和儲值卡。");
     const months: Record<string, typeof ledger.months[string]["items"]> = {};
     if (T.id && T.m) months[T.m] = (ledger.months[T.m]?.items || []).filter((x) => x.id !== T.id);
@@ -56,13 +59,14 @@ function TopupDialog() {
         {svs.length ? (
           <div className="namefield">
             <label htmlFor="tp-card">儲值卡</label>
-            <select id="tp-card" value={card || svs[0].id} onChange={(e) => setCard(e.target.value)}>
+            <select id="tp-card" value={cur} onChange={(e) => setCard(e.target.value)}>
               {svs.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}（從 {svParent(s, c)?.name || ""} 加值）
                 </option>
               ))}
             </select>
+            {oldCard ? <small style={{ color: "var(--exp)", fontSize: 12 }}>這筆原本記在「{oldCard.name}」，它現在不是悠遊卡；按儲存會改記到上面選的悠遊卡。</small> : null}
           </div>
         ) : (
           <p>還沒有儲值卡。請到帳戶頁點進信用卡，在帳戶設定開啟「悠遊聯名卡」。</p>
