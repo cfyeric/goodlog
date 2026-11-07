@@ -1,4 +1,5 @@
 /** 搜尋記錄：一次顯示 20 筆，快滑到底時再接著顯示 20 筆 */
+import { expenseView } from "../../core/ledger";
 import { Fragment, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { searchTx } from "../../core/search";
 import { formatMoney, net } from "../../core/money";
@@ -63,7 +64,7 @@ function SearchSheet() {
 
   if (!ledger) return null;
   const s = ledger.settings;
-  const exp = res.filter((t) => t.type === "expense").reduce((a, t) => a + net(t), 0);
+  const exp = expenseView(s, res).filter((t) => t.type === "expense").reduce((a, t) => a + net(t), 0);
   const inc = res.filter((t) => t.type === "income").reduce((a, t) => a + net(t), 0);
   const list = res.slice(0, shown);
   // 依月份分段，跨年也看得出是哪一年

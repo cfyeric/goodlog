@@ -439,6 +439,47 @@ function AccSettings({ ledger, k }: { ledger: Ledger; k: string }) {
               }
             />
           </OptRow>
+          <OptRow label="支出怎麼算">
+            <select
+              className="numin"
+              style={{ width: "auto", maxWidth: "62%" }}
+              value={s.svMode || ""}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSettings((st) => (v === "topup" ? { ...st, svMode: "topup" } : (({ svMode: _m, ...y }) => y as Settings)(st)));
+                toast(v === "topup" ? "已改成加值時算支出，用悠遊卡付的消費只記錄" : "已改回消費時算支出，加值不算支出");
+              }}
+            >
+              <option value="">消費時算</option>
+              <option value="topup">加值時算</option>
+            </select>
+          </OptRow>
+          {s.svMode === "topup" ? (
+            <OptRow label="加值算在">
+              <select
+                className="numin"
+                style={{ width: "auto", maxWidth: "62%" }}
+                value={c.svCat || ""}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setSettings((st) => updCard(c.id, (x) => (v ? { ...x, svCat: v } : (({ svCat: _c, ...y }) => y as Card)(x)), st));
+                }}
+              >
+                <option value="">未分類</option>
+                {(s.groups || [])
+                  .filter((g) => g.type === "expense")
+                  .flatMap((g) =>
+                    (s.categories || [])
+                      .filter((x) => x.groupId === g.id && (!x.hidden || x.id === c.svCat))
+                      .map((x) => (
+                        <option key={x.id} value={x.id}>
+                          {g.name} › {x.name}
+                        </option>
+                      )),
+                  )}
+              </select>
+            </OptRow>
+          ) : null}
           <OptRow label="餘額起算日">
             <input
               type="date"
@@ -458,6 +499,9 @@ function AccSettings({ ledger, k }: { ledger: Ledger; k: string }) {
           </OptRow>
           <BudgetRow b={c} name={c.name} onChange={setBudget} />
         </div>
+        <p className="pkhint">
+          {s.svMode === "topup" ? "目前是「加值時算支出」：加值算進報表和預算，用悠遊卡付的消費只記錄、扣餘額，不算支出。這個設定套用到所有悠遊卡和全部記錄。" : "目前是「消費時算支出」：加值不算支出，用悠遊卡付的消費才算。這個設定套用到所有悠遊卡和全部記錄。"}
+        </p>
         <p className="pkhint">
           「目前卡上餘額」是起算日那天結束時的餘額，{c.svDate ? `${+c.svDate.slice(5, 7)}/${+c.svDate.slice(8, 10)} 之後` : "之後"}的加值和消費會自動加減。填餘額時起算日會自動改成今天；對不上時重新填一次，或調整起算日。
         </p>

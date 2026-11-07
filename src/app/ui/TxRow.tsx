@@ -1,5 +1,5 @@
 import type { Settings, Tx } from "../../core/types";
-import { cardOf, findCategory, findProject, payOf, svParent } from "../../core/ledger";
+import { cardOf, findCategory, findProject, isSvTx, payOf, svParent, svTopupMode, type ViewTx } from "../../core/ledger";
 import { formatMoney, net } from "../../core/money";
 import { everyText } from "../../core/recurrenceText";
 import { groupNet, groupTitle } from "../../core/editor";
@@ -9,7 +9,13 @@ import { useOverlay } from "../editor/context";
 const md = (d: string) => +d.slice(5, 7) + "/" + +d.slice(8, 10);
 
 /** 記錄列表的一列；點了打開編輯 */
-export function TxRow({ t, s, showDate }: { t: Tx; s: Settings; showDate?: boolean }) {
+export function TxRow(props: { t: Tx; s: Settings; showDate?: boolean }) {
+  // 報表把加值轉成支出時，點下去要打開原本那筆加值
+  const o = (props.t as ViewTx).orig;
+  return <TxRowInner {...props} t={o || props.t} />;
+}
+
+function TxRowInner({ t, s, showDate }: { t: Tx; s: Settings; showDate?: boolean }) {
   const { openEditor, openTopup } = useOverlay();
   if (t.type === "transfer") {
     const sub: string[] = [];
@@ -34,9 +40,14 @@ export function TxRow({ t, s, showDate }: { t: Tx; s: Settings; showDate?: boole
   if (t.type === "topup") {
     const sv = cardOf(s, t);
     const pc = svParent(s, sv);
+    const tm = svTopupMode(s);
     const sub: string[] = [];
     if (showDate) sub.push(md(t.date));
-    sub.push((pc ? "從 " + pc.name + " " : "") + "加值，不算支出");
+    if (tm) {
+      const vc = findCategory(s, sv?.svCat);
+      if (vc) sub.push(vc.name);
+      sub.push((pc ? "從 " + pc.name + " " : "") + "加值");
+    } else sub.push((pc ? "從 " + pc.name + " " : "") + "加值，不算支出");
     if (t.note) sub.push(t.note);
     return (
       <button className="tx" onClick={() => openTopup({ id: t.id, m: t.date.slice(0, 7), cardId: t.cardId || "", amount: String(t.amount), date: t.date, note: t.note || "" })}>
@@ -46,7 +57,7 @@ export function TxRow({ t, s, showDate }: { t: Tx; s: Settings; showDate?: boole
           <span className="s" style={{ display: "block" }}>{sub.join(" · ")}</span>
         </span>
         <span className="txr">
-          <span className="amt t">+{formatMoney(+t.amount || 0)}</span>
+          {tm ? <span className="amt e">−{formatMoney(+t.amount || 0)}</span> : <span className="amt t">+{formatMoney(+t.amount || 0)}</span>}
           <span className="chips">{pc ? <span className="chip">{pc.name}</span> : null}</span>
         </span>
       </button>
@@ -67,6 +78,9 @@ export function TxRow({ t, s, showDate }: { t: Tx; s: Settings; showDate?: boole
   if (t.time && !showDate) sub.push(t.time);
   if (t.tags && t.tags.length) sub.push(t.tags.map((x) => "#" + x).join(" "));
   const inc = t.type === "income";
+  // 加值時算支出：用悠遊卡付的消費只記錄，金額用灰色、標「不算支出」
+  const svOnly = svTopupMode(s) && isSvTx(s, t);
+  if (svOnly) sub.push("悠遊卡付款，不算支出");
   return (
     <button className="tx" onClick={() => openEditor({ tx: t })}>
       <Seal c={c} s={s} />
@@ -75,7 +89,7 @@ export function TxRow({ t, s, showDate }: { t: Tx; s: Settings; showDate?: boole
         <span className="s" style={{ display: "block" }}>{sub.join(" · ")}</span>
       </span>
       <span className="txr">
-        <span className={"amt " + (inc ? "i" : "e")}>{(inc ? "+" : "−") + formatMoney(net(t))}</span>
+        <span className={"amt " + (svOnly ? "t" : inc ? "i" : "e")}>{(inc ? "+" : svOnly ? "" : "−") + formatMoney(net(t))}</span>
         <span className="chips">
           {p ? <span className="chip proj">{p.name}</span> : null}
           {t.type === "expense" ? <span className="chip">{payOf(s, t) === "card" ? cardOf(s, t)?.name || "信用卡" : "現金"}</span> : null}

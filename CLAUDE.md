@@ -121,6 +121,8 @@ fixtures/     比對用資料；fixtures/private/ 是真實帳本，已在 .giti
 
 信用卡對帳（statement.ts）：記錄的選填欄位 `rc` = 已對上哪份帳單的哪一行（`stmtKey` + `#行號`），或 `"next"`＝使用者標成下期入帳。比對時：先套用 rc 和手動對應（links）→ 多筆群組合計當成一個單位比 → 漏記的行找同一天 2～6 筆加總相等的建議（combo，仍算漏記，確認後 `mergeGroup`）。已對上別份帳單的記錄不再拿來比；"next" 不受日期範圍限制。沒有 rc／grp 的舊資料比對結果跟舊版一樣（legacy-diff 測試）。
 
+悠遊卡算法：`settings.svMode` 不填＝舊版（悠遊卡消費算支出、加值不算）；`"topup"`＝加值時算支出（類別用悠遊卡的 `svCat`），悠遊卡消費只記錄。報表、首頁、專案、搜尋的支出一律先過 `expenseView`（ledger.ts），記錄列用 `countsAsExpense` 判斷顯示。刷卡金額、帳單比對、悠遊卡餘額兩種算法相同。
+
 ## 慣例
 
 - 每次 push 有使用者看得到的改動，就在 `src/app/changelog.ts`（設定 → 更新紀錄）最上面加一筆，用「畫面上有什麼不同」的說法寫。

@@ -1,5 +1,5 @@
 import type { Budget, Card, Ledger, MonthKey, Project } from "./types";
-import { cardOf, chargeCard, isSvTx, payOf } from "./ledger";
+import { cardOf, chargeCard, isSvTx, payOf, svTopupMode } from "./ledger";
 import { net, r2 } from "./money";
 
 /** 花到預算的這個比例時開始提醒 */
@@ -52,7 +52,8 @@ export function budgetList(l: Ledger, ym: MonthKey): BudgetStatus[] {
       const keys: string[] = [];
       if (t.type === "expense") {
         v = net(t);
-        keys.push(t.projectId || "");
+        // 加值時算支出的話，用悠遊卡付的消費不算進專案預算
+        if (!(svTopupMode(s) && isSvTx(s, t))) keys.push(t.projectId || "");
         if (payOf(s, t) === "cash") keys.push("cash");
         else if (isSvTx(s, t)) keys.push("card:" + (cardOf(s, t) as Card).id);
         else keys.push("card:" + (cardOf(s, t)?.id || ""), "cardall");

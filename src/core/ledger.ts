@@ -113,6 +113,37 @@ export function svBalance(l: Ledger, c: Card, today: DateStr): number {
   return r2(b);
 }
 
+/** 是不是「加值時就算支出」的悠遊卡算法 */
+export const svTopupMode = (s: Settings): boolean => s.svMode === "topup";
+
+/** 報表、統計用的記錄：orig 是帳本裡原本那筆（加值轉成支出時才有） */
+export type ViewTx = Tx & { orig?: Tx };
+
+/**
+ * 算支出用的記錄清單。舊算法原樣回傳；加值算支出時：
+ * - 加值變成一筆刷母卡的支出，類別用悠遊卡設定的 svCat
+ * - 用悠遊卡付的消費拿掉（只記錄、不算支出）
+ */
+export function expenseView(s: Settings, list: Tx[]): ViewTx[] {
+  if (!svTopupMode(s)) return list;
+  const out: ViewTx[] = [];
+  for (const t of list) {
+    if (isSvTx(s, t)) continue;
+    if (t.type === "topup") {
+      const c = cardOf(s, t);
+      const p = svParent(s, c);
+      out.push({ ...t, type: "expense", catId: c?.svCat || null, pay: "card", cardId: p?.id || t.cardId, name: t.name || "加值" + (c ? "：" + c.name : ""), orig: t });
+    } else out.push(t);
+  }
+  return out;
+}
+
+/** 這筆在列表上算不算支出（給記錄列顯示用） */
+export function countsAsExpense(s: Settings, t: Tx): boolean {
+  if (svTopupMode(s)) return (t.type === "expense" && !isSvTx(s, t)) || t.type === "topup";
+  return t.type === "expense";
+}
+
 /** 某張信用卡底下的儲值卡 */
 export function svChildOf(s: Settings, c: Card): Card | null {
   return (s.cards || []).find((x) => x.svOf === c.id) || null;

@@ -86,6 +86,8 @@ export interface Card extends Budget {
   svInit?: number;
   /** svInit 是哪一天填的；餘額從這天之後開始推算 */
   svDate?: DateStr;
+  /** 悠遊卡加值時算支出（settings.svMode = "topup"）時，加值歸在哪個類別 */
+  svCat?: string;
   /** 匯入帳單時記住的欄位對應（存的是欄位標題文字） */
   csvMap?: { date: string; desc: string; amount: string };
 }
@@ -191,6 +193,11 @@ export interface Rule {
 }
 
 export interface Settings {
+  /**
+   * 悠遊卡怎麼算支出：不填＝用悠遊卡付的消費算支出、加值不算（舊版做法）；
+   * "topup"＝加值時就算支出（類別用悠遊卡的 svCat），用悠遊卡付的消費只記錄、不算支出
+   */
+  svMode?: "topup";
   categories: Category[];
   groups: Group[];
   projects: Project[];
